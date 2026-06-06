@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode variant: dark parent + dark splash background so the launch window
+         matches the system theme instead of flashing a light background. -->
+    <style name="Theme.NZBConnect" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+</resources>
