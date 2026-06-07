@@ -1,3 +1,7 @@
+import com.android.build.OutputFile
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,23 +9,48 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.android.git.version)
 }
 
 android {
     namespace = "org.cygnusx1.nzbconnect"
     compileSdk = 35
 
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val hasKeystore = keystorePropertiesFile.exists()
+
+    if (hasKeystore) {
+        val keystoreProperties = Properties()
+        keystoreProperties.load(keystorePropertiesFile.inputStream())
+
+        signingConfigs {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    } else {
+        println("Warning: keystore.properties file not found. Skipping signing configuration.")
+    }
+
     defaultConfig {
         applicationId = "org.cygnusx1.nzbconnect"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = androidGitVersion.name()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                println("Warning: keystore.properties file not found. Skipping signing configuration for release.")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -38,6 +67,36 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false // Set to true if you also want a universal APK
+        }
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as BaseVariantOutputImpl
+            val appName = "nzbconnect"
+            val baseAbiVersion = output.getFilter(OutputFile.ABI)
+            val buildType = variant.buildType.name
+            val versionName = variant.versionName
+
+            // Join only the non-null segments so the ABI part drops out cleanly
+            // when ABI splits aren't enabled.
+            val artifactName = if (buildType == "debug") {
+                listOfNotNull(appName, buildType, baseAbiVersion, versionName)
+            } else {
+                listOfNotNull(appName, baseAbiVersion, versionName)
+            }.joinToString("-")
+
+            output.outputFileName = "$artifactName.apk"
+        }
     }
 }
 
@@ -73,6 +132,7 @@ dependencies {
 
     implementation(libs.androidx.security.crypto)
     implementation(libs.coil.compose)
+    implementation(libs.reorderable)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -22,19 +22,29 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Info
@@ -45,9 +55,15 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.RssFeed
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,8 +72,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -83,11 +102,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import org.cygnusx1.nzbconnect.R
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
@@ -106,6 +129,10 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
     val context = LocalContext.current
     var showSidebar by remember { mutableStateOf(false) }
     var showFinishActionDialog by remember { mutableStateOf(false) }
+    var showSortDialog by remember { mutableStateOf(false) }
+    var showSpeedLimitDialog by remember { mutableStateOf(false) }
+    var showCustomSpeedDialog by remember { mutableStateOf(false) }
+    var customSpeedInput by remember { mutableStateOf("") }
 
     LaunchedEffect(pagerState.currentPage) {
         if (pagerState.currentPage == 1) viewModel.refreshHistory()
@@ -197,6 +224,17 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                     },
                 )
             },
+            bottomBar = {
+                DownloadsActionBar(
+                    state = state,
+                    currentPage = pagerState.currentPage,
+                    onSort = { showSortDialog = true },
+                    onToggleMultiSelect = viewModel::toggleHistoryMultiSelect,
+                    onTogglePauseAll = viewModel::togglePauseAll,
+                    onSpeedLimit = { showSpeedLimitDialog = true },
+                    onDeleteSelected = viewModel::deleteSelectedHistory,
+                )
+            },
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { padding ->
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -271,67 +309,128 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                 onDismiss = { showFinishActionDialog = false },
             )
         }
-    }
-}
 
-@Composable
-private fun QueueTab(state: QueueUiState, viewModel: QueueViewModel) {
-    val snapshot = state.snapshot
-    when {
-        snapshot == null && state.error != null -> Centered(state.error!!, isError = true)
-        snapshot == null -> Centered("Loading…")
-        snapshot.items.isEmpty() -> Centered("Queue is empty")
-        else -> LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(snapshot.items, key = { it.id }) { item ->
-                QueueRow(
-                    item = item,
-                    onPause = { viewModel.pauseItem(item.id) },
-                    onResume = { viewModel.resumeItem(item.id) },
-                    onDelete = { viewModel.deleteItem(item.id, deleteFiles = true) },
-                )
-            }
+        if (showSortDialog) {
+            SortDialog(
+                currentPage = pagerState.currentPage,
+                queueSort = state.queueSort,
+                historySort = state.historySort,
+                onQueueSort = { viewModel.setQueueSort(it); showSortDialog = false },
+                onHistorySort = { viewModel.setHistorySort(it); showSortDialog = false },
+                onDismiss = { showSortDialog = false },
+            )
+        }
+
+        if (showSpeedLimitDialog) {
+            SpeedLimitDialog(
+                currentLimit = state.snapshot?.speedLimit ?: 100,
+                onSelect = { pct -> viewModel.setSpeedLimit(pct); showSpeedLimitDialog = false },
+                onCustom = { showSpeedLimitDialog = false; customSpeedInput = ""; showCustomSpeedDialog = true },
+                onDismiss = { showSpeedLimitDialog = false },
+            )
+        }
+
+        if (showCustomSpeedDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomSpeedDialog = false },
+                title = { Text("Custom Speed Limit") },
+                text = {
+                    OutlinedTextField(
+                        value = customSpeedInput,
+                        onValueChange = { customSpeedInput = it.filter { c -> c.isDigit() } },
+                        label = { Text("Percentage (1–100)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val pct = customSpeedInput.toIntOrNull()?.coerceIn(1, 100)
+                        if (pct != null) { viewModel.setSpeedLimit(pct); showCustomSpeedDialog = false }
+                    }) { Text("Set") }
+                },
+                dismissButton = { TextButton(onClick = { showCustomSpeedDialog = false }) { Text("Cancel") } },
+            )
         }
     }
 }
 
 @Composable
-private fun QueueRow(
-    item: QueueItem,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onDelete: () -> Unit,
+private fun DownloadsActionBar(
+    state: QueueUiState,
+    currentPage: Int,
+    onSort: () -> Unit,
+    onToggleMultiSelect: () -> Unit,
+    onTogglePauseAll: () -> Unit,
+    onSpeedLimit: () -> Unit,
+    onDeleteSelected: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
-            LinearProgressIndicator(
-                progress = { item.percentage / 100f },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+    Column {
+        HorizontalDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (state.historyMultiSelect && currentPage == 1) {
+                IconButton(onClick = onToggleMultiSelect) {
+                    Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
+                }
                 Text(
-                    "${item.percentage}%  •  ${item.sizeLeft} left  •  ${item.status}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "${state.selectedHistoryIds.size} selected",
+                    modifier = Modifier.weight(1f).padding(start = 4.dp),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
-                Row {
-                    val paused = item.status.equals("paused", ignoreCase = true)
-                    IconButton(onClick = if (paused) onResume else onPause) {
+                IconButton(
+                    onClick = onDeleteSelected,
+                    enabled = state.selectedHistoryIds.isNotEmpty(),
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Delete selected",
+                        tint = if (state.selectedHistoryIds.isNotEmpty())
+                            MaterialTheme.colorScheme.error
+                        else
+                            LocalContentColor.current.copy(alpha = 0.38f),
+                    )
+                }
+            } else {
+                IconButton(onClick = onSort) {
+                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                }
+                if (currentPage == 1) {
+                    IconButton(onClick = onToggleMultiSelect) {
                         Icon(
-                            imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (paused) "Resume" else "Pause",
+                            Icons.Filled.SelectAll,
+                            contentDescription = "Multi-select",
+                            tint = if (state.historyMultiSelect)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                LocalContentColor.current,
                         )
                     }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                }
+                Spacer(Modifier.weight(1f))
+                val paused = state.snapshot?.paused == true
+                IconButton(onClick = onTogglePauseAll) {
+                    Icon(
+                        imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (paused) "Resume all" else "Pause all",
+                        tint = if (paused) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                    )
+                }
+                val speedLimit = state.snapshot?.speedLimit ?: 100
+                BadgedBox(
+                    badge = {
+                        if (speedLimit != 100) {
+                            Badge { Text("$speedLimit%", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    },
+                ) {
+                    IconButton(onClick = onSpeedLimit) {
+                        Icon(Icons.Filled.Speed, contentDescription = "Speed limit")
                     }
                 }
             }
@@ -340,18 +439,251 @@ private fun QueueRow(
 }
 
 @Composable
-private fun HistoryTab(state: QueueUiState, viewModel: QueueViewModel) {
+private fun SortDialog(
+    currentPage: Int,
+    queueSort: QueueSortOrder,
+    historySort: HistorySortOrder,
+    onQueueSort: (QueueSortOrder) -> Unit,
+    onHistorySort: (HistorySortOrder) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sort by") },
+        text = {
+            Column {
+                if (currentPage == 0) {
+                    QueueSortOrder.entries.forEach { order ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onQueueSort(order) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = queueSort == order, onClick = { onQueueSort(order) })
+                            Text(order.label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                } else {
+                    HistorySortOrder.entries.forEach { order ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onHistorySort(order) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = historySort == order, onClick = { onHistorySort(order) })
+                            Text(order.label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun SpeedLimitDialog(
+    currentLimit: Int,
+    onSelect: (Int) -> Unit,
+    onCustom: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val presets = listOf(100, 95, 80, 60, 40, 20)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Speed Limit") },
+        text = {
+            Column {
+                Text(
+                    "Current: $currentLimit%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                presets.forEach { pct ->
+                    Text(
+                        text = if (pct == 100) "100% (unlimited)" else "$pct%",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(pct) }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (currentLimit == pct) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentLimit == pct) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                    )
+                }
+                Text(
+                    text = "Custom…",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCustom() }
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun QueueTab(state: QueueUiState, viewModel: QueueViewModel) {
+    var localItems by remember { mutableStateOf(state.sortedQueueItems) }
+    var isAnyDragging by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.sortedQueueItems) {
+        if (!isAnyDragging) localItems = state.sortedQueueItems
+    }
+
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        localItems = localItems.toMutableList().apply { add(to.index, removeAt(from.index)) }
+    }
+
     when {
-        state.loadingHistory && state.history.isEmpty() -> Centered("Loading…")
-        state.history.isEmpty() -> Centered("No history")
+        state.snapshot == null && state.error != null -> Centered(state.error!!, isError = true)
+        state.snapshot == null -> Centered("Loading…")
+        localItems.isEmpty() -> Centered("Queue is empty")
+        else -> LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(localItems, key = { it.id }) { item ->
+                ReorderableItem(reorderState, key = item.id) { isDragging ->
+                    QueueRow(
+                        item = item,
+                        isDragging = isDragging,
+                        dragHandleModifier = Modifier.draggableHandle(
+                            onDragStarted = { isAnyDragging = true },
+                            onDragStopped = {
+                                isAnyDragging = false
+                                val newIdx = localItems.indexOfFirst { it.id == item.id }
+                                if (newIdx >= 0) viewModel.moveItem(item.id, newIdx)
+                            },
+                        ),
+                        onPause = { viewModel.pauseItem(item.id) },
+                        onResume = { viewModel.resumeItem(item.id) },
+                        onDelete = { viewModel.deleteItem(item.id, deleteFiles = true) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueRow(
+    item: QueueItem,
+    isDragging: Boolean,
+    dragHandleModifier: Modifier,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val paused = item.status.equals("paused", ignoreCase = true)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 6.dp else 1.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp)) {
+                Text(
+                    item.name,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (paused) PausedAmber else Color.Unspecified,
+                )
+                LinearProgressIndicator(
+                    progress = { item.percentage / 100f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = if (paused) PausedAmber else MaterialTheme.colorScheme.primary,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val meta = buildList {
+                        add("${item.percentage}%")
+                        add("${item.sizeLeft} left")
+                        if (item.timeLeft.isNotBlank() && item.timeLeft != "0:00:00") add(item.timeLeft)
+                        if (item.category.isNotBlank()) add(item.category)
+                        add(item.status)
+                    }.joinToString("  •  ")
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Row {
+                        IconButton(
+                            onClick = if (paused) onResume else onPause,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (paused) "Resume" else "Pause",
+                            )
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
+            }
+            val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
+            Canvas(
+                modifier = dragHandleModifier
+                    .fillMaxHeight()
+                    .width(20.dp),
+            ) {
+                val dotR = 2.dp.toPx()
+                val colGap = 5.5.dp.toPx()
+                val rowGap = 10.dp.toPx()
+                val vertPad = 14.dp.toPx()
+                val startX = size.width / 2f - colGap / 2f
+                var y = vertPad
+                while (y <= size.height - vertPad) {
+                    drawCircle(dotColor, dotR, Offset(startX, y))
+                    drawCircle(dotColor, dotR, Offset(startX + colGap, y))
+                    y += rowGap
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryTab(state: QueueUiState, viewModel: QueueViewModel) {
+    val items = state.sortedHistoryItems
+    when {
+        state.loadingHistory && items.isEmpty() -> Centered("Loading…")
+        items.isEmpty() -> Centered("No history")
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(state.history, key = { it.id }) { item ->
+            items(items, key = { it.id }) { item ->
                 HistoryRow(
                     item = item,
+                    multiSelect = state.historyMultiSelect,
+                    selected = item.id in state.selectedHistoryIds,
+                    onSelect = { viewModel.toggleHistoryItemSelection(item.id) },
                     onDelete = { viewModel.deleteHistoryItem(item.id) },
                     onDeleteWithFiles = { viewModel.deleteHistoryItem(item.id, deleteFiles = true) },
                 )
@@ -362,6 +694,7 @@ private fun HistoryTab(state: QueueUiState, viewModel: QueueViewModel) {
 
 private val StatusGreen = Color(0xFF66BB6A)
 private val DateAmber = Color(0xFFFFB300)
+private val PausedAmber = Color(0xFFFFC107)
 
 @Composable
 private fun statusColor(status: String): Color = when {
@@ -371,16 +704,35 @@ private fun statusColor(status: String): Color = when {
 }
 
 @Composable
-private fun HistoryRow(item: HistoryItem, onDelete: () -> Unit, onDeleteWithFiles: () -> Unit) {
+private fun HistoryRow(
+    item: HistoryItem,
+    multiSelect: Boolean,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit,
+    onDeleteWithFiles: () -> Unit,
+) {
     val clipboardManager = LocalClipboardManager.current
     var menuExpanded by remember { mutableStateOf(false) }
     var showRemoveSubmenu by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (multiSelect) Modifier.clickable { onSelect() } else Modifier),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (multiSelect) {
+                Icon(
+                    imageVector = if (selected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                    contentDescription = if (selected) "Selected" else "Not selected",
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp, top = 12.dp, bottom = 12.dp)) {
                 Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
                 Row(
@@ -419,41 +771,43 @@ private fun HistoryRow(item: HistoryItem, onDelete: () -> Unit, onDeleteWithFile
                     Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
             }
-            Box {
-                IconButton(onClick = { showRemoveSubmenu = false; menuExpanded = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "More options")
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false; showRemoveSubmenu = false },
-                ) {
-                    if (!showRemoveSubmenu) {
-                        DropdownMenuItem(
-                            text = { Text("Copy title") },
-                            onClick = {
-                                clipboardManager.setText(AnnotatedString(item.name))
-                                menuExpanded = false
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove") },
-                            trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
-                            onClick = { showRemoveSubmenu = true },
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
-                            text = { Text("Remove Options", fontWeight = FontWeight.Bold) },
-                            onClick = { showRemoveSubmenu = false },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove from history") },
-                            onClick = { onDelete(); menuExpanded = false; showRemoveSubmenu = false },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove and delete files") },
-                            onClick = { onDeleteWithFiles(); menuExpanded = false; showRemoveSubmenu = false },
-                        )
+            if (!multiSelect) {
+                Box {
+                    IconButton(onClick = { showRemoveSubmenu = false; menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false; showRemoveSubmenu = false },
+                    ) {
+                        if (!showRemoveSubmenu) {
+                            DropdownMenuItem(
+                                text = { Text("Copy title") },
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(item.name))
+                                    menuExpanded = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove") },
+                                trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                                onClick = { showRemoveSubmenu = true },
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                                text = { Text("Remove Options", fontWeight = FontWeight.Bold) },
+                                onClick = { showRemoveSubmenu = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove from history") },
+                                onClick = { onDelete(); menuExpanded = false; showRemoveSubmenu = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove and delete files") },
+                                onClick = { onDeleteWithFiles(); menuExpanded = false; showRemoveSubmenu = false },
+                            )
+                        }
                     }
                 }
             }

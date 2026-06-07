@@ -36,4 +36,7 @@ interface SabnzbdApi {
 
     @GET
     suspend fun simple(@Url url: String, @QueryMap params: Map<String, String>): Response<SimpleStatusResponse>
+
+    @GET
+    suspend fun switch(@Url url: String, @QueryMap params: Map<String, String>): Response<SwitchResponse>
 }

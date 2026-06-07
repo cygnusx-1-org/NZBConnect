@@ -73,6 +73,7 @@ class SabnzbdRepository @Inject constructor(
                 is ApiResult.Failure -> res
                 is ApiResult.Success -> {
                     val q = res.data.queue
+                    val rawLimit = q.speedLimit.trimEnd('%').toIntOrNull() ?: 100
                     ApiResult.Success(
                         QueueSnapshot(
                             paused = q.paused,
@@ -81,6 +82,7 @@ class SabnzbdRepository @Inject constructor(
                             sizeLeft = q.sizeLeft,
                             diskSpace = formatDiskGb(q.diskSpace),
                             finishAction = q.finishAction ?: "None",
+                            speedLimit = if (rawLimit == 0) 100 else rawLimit,
                             items = q.slots.map {
                                 QueueItem(
                                     id = it.nzoId,
@@ -177,6 +179,22 @@ class SabnzbdRepository @Inject constructor(
 
     suspend fun setFinishAction(action: String): ApiResult<Unit> =
         simple(mapOf("mode" to "queue", "name" to "change_complete_action", "value" to action))
+
+    suspend fun setSpeedLimit(percentage: Int): ApiResult<Unit> =
+        simple(mapOf("mode" to "queue", "name" to "speedlimit", "value" to percentage.toString()))
+
+    suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> =
+        call {
+            val (u, p) = base(mapOf("mode" to "switch", "value" to id, "value2" to newPosition.toString()))
+            api.switch(u, p)
+        }.let { res ->
+            when (res) {
+                is ApiResult.Failure -> res
+                is ApiResult.Success ->
+                    if (res.data.result.position >= 0) ApiResult.Success(Unit)
+                    else ApiResult.Failure("Could not move queue item")
+            }
+        }
 
     /** Connection test for the SAB settings screen (uses the entered, not-yet-saved creds). */
     suspend fun testConnection(baseUrl: String, apiKey: String): ApiResult<String> {

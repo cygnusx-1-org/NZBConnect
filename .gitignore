@@ -11,3 +11,4 @@
 local.properties
 *.keystore
 !debug.keystore
+keystore.properties

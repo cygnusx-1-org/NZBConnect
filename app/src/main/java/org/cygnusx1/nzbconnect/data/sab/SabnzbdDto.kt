@@ -18,6 +18,20 @@ data class SimpleStatusResponse(
     val error: String? = null,
 )
 
+/**
+ * Response from `mode=switch` (queue reorder). Unlike most commands it returns no `status`
+ * field — instead a nested `result` with the item's resulting position. A position of -1
+ * means the move failed (e.g. unknown nzo_id).
+ */
+@Serializable
+data class SwitchResponse(val result: SwitchResult = SwitchResult()) {
+    @Serializable
+    data class SwitchResult(
+        val position: Int = -1,
+        val priority: Int = 0,
+    )
+}
+
 @Serializable
 data class CategoriesResponse(
     val categories: List<String> = emptyList(),
@@ -33,6 +47,7 @@ data class QueueResponse(val queue: Queue = Queue()) {
         @SerialName("sizeleft") val sizeLeft: String = "",
         @SerialName("diskspace1") val diskSpace: String = "",
         @SerialName("finishaction") val finishAction: String? = null,
+        @SerialName("speedlimit") val speedLimit: String = "100",
         val slots: List<Slot> = emptyList(),
     )
 

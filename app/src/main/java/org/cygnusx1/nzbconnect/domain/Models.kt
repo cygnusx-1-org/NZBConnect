@@ -81,6 +81,7 @@ data class QueueSnapshot(
     val sizeLeft: String,
     val diskSpace: String,
     val finishAction: String,
+    val speedLimit: Int,
     val items: List<QueueItem>,
 )
 

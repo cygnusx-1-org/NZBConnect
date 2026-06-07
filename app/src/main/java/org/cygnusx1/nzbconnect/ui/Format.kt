@@ -47,6 +47,21 @@ fun formatAgeShort(pubDateMillis: Long): String {
     }
 }
 
+/** Parses a SABnzbd size string like "3.9 GB" or "660.7 MB" to a comparable MB value. */
+fun parseSizeMb(sizeStr: String): Double {
+    val parts = sizeStr.trim().split(" ", limit = 2)
+    if (parts.size != 2) return 0.0
+    val value = parts[0].toDoubleOrNull() ?: return 0.0
+    return when (parts[1].uppercase()) {
+        "B" -> value / 1_048_576.0
+        "KB", "K" -> value / 1024.0
+        "MB", "M" -> value
+        "GB", "G" -> value * 1024.0
+        "TB", "T" -> value * 1_048_576.0
+        else -> 0.0
+    }
+}
+
 /** Relative age from an epoch-millis publish date, e.g. "3d ago". */
 fun formatAge(pubDateMillis: Long): String {
     if (pubDateMillis <= 0) return ""
