@@ -103,6 +103,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,8 +117,12 @@ import org.cygnusx1.nzbconnect.R
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
 import org.cygnusx1.nzbconnect.domain.QueueSnapshot
-import org.cygnusx1.nzbconnect.domain.SabInfo
-import org.cygnusx1.nzbconnect.domain.SabWarning
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
+import org.cygnusx1.nzbconnect.domain.DownloadPriority
+import org.cygnusx1.nzbconnect.domain.ServerInfo
+import org.cygnusx1.nzbconnect.domain.ServerWarning
+import org.cygnusx1.nzbconnect.domain.displayName
+import org.cygnusx1.nzbconnect.ui.AppBrandTitle
 import org.cygnusx1.nzbconnect.ui.formatHistoryDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,7 +145,7 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
     }
 
     LaunchedEffect(showSidebar) {
-        if (showSidebar) viewModel.loadSabInfo()
+        if (showSidebar) viewModel.loadServerInfo()
     }
 
     state.message?.let { msg ->
@@ -154,11 +160,19 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            "Downloads",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AppBrandTitle("Downloads")
+                            if (state.availableClients.size > 1) {
+                                ServiceSelector(
+                                    clientName = state.clientName,
+                                    clients = state.availableClients,
+                                    onSelect = viewModel::selectClient,
+                                )
+                            }
+                        }
                     },
                     actions = {
                         state.snapshot?.let { snap ->
@@ -185,38 +199,44 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                                     text = { Text("Clear history") },
                                     onClick = { viewModel.clearHistory(); menuExpanded = false },
                                 )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.PowerSettingsNew, null) },
-                                    text = { Text("Set on finish action") },
-                                    onClick = { showFinishActionDialog = true; menuExpanded = false },
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.RssFeed, null) },
-                                    text = { Text("Read all RSS feeds now") },
-                                    onClick = { viewModel.readRssNow(); menuExpanded = false },
-                                )
+                                if (state.capabilities.finishAction) {
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Filled.PowerSettingsNew, null) },
+                                        text = { Text("Set on finish action") },
+                                        onClick = { showFinishActionDialog = true; menuExpanded = false },
+                                    )
+                                }
+                                if (state.capabilities.refreshFeeds) {
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Filled.RssFeed, null) },
+                                        text = { Text("Read all RSS feeds now") },
+                                        onClick = { viewModel.refreshFeeds(); menuExpanded = false },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     leadingIcon = { Icon(Icons.Filled.Info, null) },
                                     text = { Text("Show server details") },
                                     onClick = { showSidebar = true; menuExpanded = false },
                                 )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.RestartAlt, null) },
-                                    text = { Text("Restart SABnzbd") },
-                                    onClick = { viewModel.restartSabnzbd(); menuExpanded = false },
-                                )
+                                if (state.capabilities.restart) {
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Filled.RestartAlt, null) },
+                                        text = { Text("Restart ${state.clientName}") },
+                                        onClick = { viewModel.restart(); menuExpanded = false },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     leadingIcon = { Icon(Icons.Filled.Language, null) },
-                                    text = { Text("View SABnzbd on web") },
+                                    text = { Text("View ${state.clientName} on web") },
                                     onClick = {
-                                        val url = viewModel.sabWebUrl
+                                        val url = viewModel.webUrl
                                         if (url.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                         menuExpanded = false
                                     },
                                 )
                                 DropdownMenuItem(
                                     leadingIcon = { Icon(Icons.Filled.Settings, null) },
-                                    text = { Text("SABnzbd settings") },
+                                    text = { Text("${state.clientName} settings") },
                                     onClick = { onNavigateToSettings(); menuExpanded = false },
                                 )
                             }
@@ -294,8 +314,9 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
             modifier = Modifier.align(Alignment.CenterEnd).statusBarsPadding(),
         ) {
             SabInfoSidebar(
-                info = state.sabInfo,
-                loading = state.sabInfoLoading,
+                info = state.serverInfo,
+                loading = state.serverInfoLoading,
+                clientName = state.clientName,
                 onDismiss = { showSidebar = false },
             )
         }
@@ -323,14 +344,16 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
 
         if (showSpeedLimitDialog) {
             SpeedLimitDialog(
-                currentLimit = state.snapshot?.speedLimit ?: 100,
-                onSelect = { pct -> viewModel.setSpeedLimit(pct); showSpeedLimitDialog = false },
+                currentLimit = state.snapshot?.speedLimit ?: if (state.capabilities.speedLimitIsPercentage) 100 else 0,
+                isPercentage = state.capabilities.speedLimitIsPercentage,
+                onSelect = { value -> viewModel.setSpeedLimit(value); showSpeedLimitDialog = false },
                 onCustom = { showSpeedLimitDialog = false; customSpeedInput = ""; showCustomSpeedDialog = true },
                 onDismiss = { showSpeedLimitDialog = false },
             )
         }
 
         if (showCustomSpeedDialog) {
+            val isPercentage = state.capabilities.speedLimitIsPercentage
             AlertDialog(
                 onDismissRequest = { showCustomSpeedDialog = false },
                 title = { Text("Custom Speed Limit") },
@@ -338,19 +361,175 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                     OutlinedTextField(
                         value = customSpeedInput,
                         onValueChange = { customSpeedInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Percentage (1–100)") },
+                        label = { Text(if (isPercentage) "Percentage (1–100)" else "Limit (KB/s, 0 = unlimited)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                     )
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val pct = customSpeedInput.toIntOrNull()?.coerceIn(1, 100)
-                        if (pct != null) { viewModel.setSpeedLimit(pct); showCustomSpeedDialog = false }
+                        val value = if (isPercentage) {
+                            customSpeedInput.toIntOrNull()?.coerceIn(1, 100)
+                        } else {
+                            customSpeedInput.toIntOrNull()?.coerceAtLeast(0)
+                        }
+                        if (value != null) { viewModel.setSpeedLimit(value); showCustomSpeedDialog = false }
                     }) { Text("Set") }
                 },
                 dismissButton = { TextButton(onClick = { showCustomSpeedDialog = false }) { Text("Cancel") } },
             )
+        }
+    }
+}
+
+private enum class QueueItemSubmenu { NONE, PRIORITY, MOVE }
+
+/** Per-queue-item overflow menu: set priority, set password, move, rename. */
+@Composable
+private fun QueueItemMenu(
+    onSetPriority: (DownloadPriority) -> Unit,
+    onSetPassword: (String) -> Unit,
+    onRename: (String) -> Unit,
+    currentName: String,
+    onMoveTop: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveEnd: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var submenu by remember { mutableStateOf(QueueItemSubmenu.NONE) }
+    var showPassword by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
+
+    fun close() { expanded = false; submenu = QueueItemSubmenu.NONE }
+
+    Box {
+        IconButton(
+            onClick = { submenu = QueueItemSubmenu.NONE; expanded = true },
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { close() }) {
+            when (submenu) {
+                QueueItemSubmenu.NONE -> {
+                    DropdownMenuItem(
+                        text = { Text("Set priority") },
+                        trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                        onClick = { submenu = QueueItemSubmenu.PRIORITY },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Set password") },
+                        onClick = { expanded = false; showPassword = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move") },
+                        trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                        onClick = { submenu = QueueItemSubmenu.MOVE },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Rename") },
+                        onClick = { expanded = false; showRename = true },
+                    )
+                }
+                QueueItemSubmenu.PRIORITY -> {
+                    DropdownMenuItem(
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                        text = { Text("Set Priority", fontWeight = FontWeight.Bold) },
+                        onClick = { submenu = QueueItemSubmenu.NONE },
+                    )
+                    DownloadPriority.values().forEach { priority ->
+                        DropdownMenuItem(
+                            text = { Text(priority.label) },
+                            onClick = { onSetPriority(priority); close() },
+                        )
+                    }
+                }
+                QueueItemSubmenu.MOVE -> {
+                    DropdownMenuItem(
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                        text = { Text("Move Options", fontWeight = FontWeight.Bold) },
+                        onClick = { submenu = QueueItemSubmenu.NONE },
+                    )
+                    DropdownMenuItem(text = { Text("Move to top") }, onClick = { onMoveTop(); close() })
+                    DropdownMenuItem(text = { Text("Move up 10") }, onClick = { onMoveUp(); close() })
+                    DropdownMenuItem(text = { Text("Move down 10") }, onClick = { onMoveDown(); close() })
+                    DropdownMenuItem(text = { Text("Move to end") }, onClick = { onMoveEnd(); close() })
+                }
+            }
+        }
+    }
+
+    if (showPassword) {
+        TextInputDialog(
+            title = "Set password",
+            label = "Password",
+            initial = "",
+            isPassword = true,
+            onConfirm = { onSetPassword(it); showPassword = false },
+            onDismiss = { showPassword = false },
+        )
+    }
+    if (showRename) {
+        TextInputDialog(
+            title = "Rename",
+            label = "New name",
+            initial = currentName,
+            isPassword = false,
+            onConfirm = { onRename(it); showRename = false },
+            onDismiss = { showRename = false },
+        )
+    }
+}
+
+@Composable
+private fun TextInputDialog(
+    title: String,
+    label: String,
+    initial: String,
+    isPassword: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text(label) },
+                singleLine = true,
+                visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text.trim()) }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Dropdown on the Downloads screen to choose which configured client to view. */
+@Composable
+private fun ServiceSelector(
+    clientName: String,
+    clients: List<DownloadClientType>,
+    onSelect: (DownloadClientType) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text("$clientName ▾", fontWeight = FontWeight.SemiBold)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            clients.forEach { type ->
+                DropdownMenuItem(
+                    text = { Text(type.displayName) },
+                    onClick = { expanded = false; onSelect(type) },
+                )
+            }
         }
     }
 }
@@ -421,11 +600,20 @@ private fun DownloadsActionBar(
                         tint = if (paused) MaterialTheme.colorScheme.error else LocalContentColor.current,
                     )
                 }
-                val speedLimit = state.snapshot?.speedLimit ?: 100
+                val isPercentage = state.capabilities.speedLimitIsPercentage
+                val speedLimit = state.snapshot?.speedLimit ?: if (isPercentage) 100 else 0
+                val isLimited = if (isPercentage) speedLimit != 100 else speedLimit > 0
                 BadgedBox(
                     badge = {
-                        if (speedLimit != 100) {
-                            Badge { Text("$speedLimit%", style = MaterialTheme.typography.labelSmall) }
+                        if (isLimited) {
+                            val label = if (isPercentage) {
+                                "$speedLimit%"
+                            } else if (speedLimit >= 1024) {
+                                "${speedLimit / 1024}M"
+                            } else {
+                                "${speedLimit}K"
+                            }
+                            Badge { Text(label, style = MaterialTheme.typography.labelSmall) }
                         }
                     },
                 ) {
@@ -489,32 +677,41 @@ private fun SortDialog(
 @Composable
 private fun SpeedLimitDialog(
     currentLimit: Int,
+    isPercentage: Boolean,
     onSelect: (Int) -> Unit,
     onCustom: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val presets = listOf(100, 95, 80, 60, 40, 20)
+    // SAB: percentages of the configured max. NZBGet: absolute KB/s (0 = unlimited).
+    val presets = if (isPercentage) listOf(100, 95, 80, 60, 40, 20) else listOf(0, 51200, 20480, 10240, 5120, 1024)
+    fun label(value: Int): String = when {
+        isPercentage && value == 100 -> "100% (unlimited)"
+        isPercentage -> "$value%"
+        value == 0 -> "Unlimited"
+        value >= 1024 -> "${value / 1024} MB/s"
+        else -> "$value KB/s"
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Speed Limit") },
         text = {
             Column {
                 Text(
-                    "Current: $currentLimit%",
+                    "Current: ${label(currentLimit)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                presets.forEach { pct ->
+                presets.forEach { preset ->
                     Text(
-                        text = if (pct == 100) "100% (unlimited)" else "$pct%",
+                        text = label(preset),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(pct) }
+                            .clickable { onSelect(preset) }
                             .padding(vertical = 12.dp, horizontal = 4.dp),
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (currentLimit == pct) FontWeight.Bold else FontWeight.Normal,
-                        color = if (currentLimit == pct) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                        fontWeight = if (currentLimit == preset) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentLimit == preset) MaterialTheme.colorScheme.primary else Color.Unspecified,
                     )
                 }
                 Text(
@@ -572,6 +769,13 @@ private fun QueueTab(state: QueueUiState, viewModel: QueueViewModel) {
                         onPause = { viewModel.pauseItem(item.id) },
                         onResume = { viewModel.resumeItem(item.id) },
                         onDelete = { viewModel.deleteItem(item.id, deleteFiles = true) },
+                        onSetPriority = { priority -> viewModel.setItemPriority(item.id, priority) },
+                        onSetPassword = { password -> viewModel.setItemPassword(item.id, item.name, password) },
+                        onRename = { newName -> viewModel.renameItem(item.id, newName) },
+                        onMoveTop = { viewModel.moveItemToTop(item.id) },
+                        onMoveUp = { viewModel.moveItemUp(item.id) },
+                        onMoveDown = { viewModel.moveItemDown(item.id) },
+                        onMoveEnd = { viewModel.moveItemToEnd(item.id) },
                     )
                 }
             }
@@ -587,6 +791,13 @@ private fun QueueRow(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onDelete: () -> Unit,
+    onSetPriority: (DownloadPriority) -> Unit,
+    onSetPassword: (String) -> Unit,
+    onRename: (String) -> Unit,
+    onMoveTop: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveEnd: () -> Unit,
 ) {
     val paused = item.status.equals("paused", ignoreCase = true)
     Card(
@@ -642,6 +853,16 @@ private fun QueueRow(
                         ) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
                         }
+                        QueueItemMenu(
+                            onSetPriority = onSetPriority,
+                            onSetPassword = onSetPassword,
+                            onRename = onRename,
+                            currentName = item.name,
+                            onMoveTop = onMoveTop,
+                            onMoveUp = onMoveUp,
+                            onMoveDown = onMoveDown,
+                            onMoveEnd = onMoveEnd,
+                        )
                     }
                 }
             }
@@ -868,10 +1089,13 @@ private fun QueueStats(snapshot: QueueSnapshot, onClick: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = accentColor,
         )
-        val eta = snapshot.timeLeft.ifBlank { "---" }
-        val size = snapshot.sizeLeft.ifBlank { "---" }
+        // Show a dash for zero/blank values (idle) instead of "0:00:00" / "0 B", like NZBGet.
+        fun dashIfEmpty(v: String): String =
+            if (v.isBlank() || v == "0" || v == "0 B" || v == "0:00:00") "---" else v
+        val eta = dashIfEmpty(snapshot.timeLeft)
+        val size = dashIfEmpty(snapshot.sizeLeft)
         Text(
-            text = if (isActive && snapshot.sizeLeft.isNotBlank()) "$eta  •  $size left"
+            text = if (isActive && size != "---") "$eta  •  $size left"
                    else "$eta  •  $size",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -880,7 +1104,7 @@ private fun QueueStats(snapshot: QueueSnapshot, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SabInfoSidebar(info: SabInfo?, loading: Boolean, onDismiss: () -> Unit) {
+private fun SabInfoSidebar(info: ServerInfo?, loading: Boolean, clientName: String, onDismiss: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxHeight()
@@ -904,15 +1128,25 @@ private fun SabInfoSidebar(info: SabInfo?, loading: Boolean, onDismiss: () -> Un
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 item {
-                    Image(
-                        painter = painterResource(R.drawable.sabnzbd_logo),
-                        contentDescription = "SABnzbd",
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(2175f / 606f)
-                            .padding(bottom = 12.dp),
-                    )
+                    if (clientName == "SABnzbd") {
+                        Image(
+                            painter = painterResource(R.drawable.sabnzbd_logo),
+                            contentDescription = "SABnzbd",
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(2175f / 606f)
+                                .padding(bottom = 12.dp),
+                        )
+                    } else {
+                        Text(
+                            clientName,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
                 item {
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -978,7 +1212,7 @@ private fun StatCell(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun WarningCard(warning: SabWarning) {
+private fun WarningCard(warning: ServerWarning) {
     val formattedTime = warning.time.toLongOrNull()
         ?.let { formatHistoryDate(it * 1000) }
         ?: warning.time.ifBlank { null }

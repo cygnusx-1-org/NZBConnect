@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.combine
 import org.cygnusx1.nzbconnect.data.local.IndexerDao
 import org.cygnusx1.nzbconnect.data.local.IndexerEntity
 import org.cygnusx1.nzbconnect.data.prefs.SecurePrefs
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
 import org.cygnusx1.nzbconnect.domain.Indexer
+import org.cygnusx1.nzbconnect.domain.NzbgetConfig
 import org.cygnusx1.nzbconnect.domain.SabConfig
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,6 +72,27 @@ class SettingsRepository @Inject constructor(
         prefs.sabBaseUrl = config.baseUrl.trim()
         prefs.sabApiKey = config.apiKey.trim()
         prefs.sabDefaultCategory = config.defaultCategory.trim()
+    }
+
+    fun getNzbgetConfig(): NzbgetConfig = NzbgetConfig(
+        baseUrl = prefs.nzbgetBaseUrl,
+        username = prefs.nzbgetUsername,
+        password = prefs.nzbgetPassword,
+        defaultCategory = prefs.nzbgetDefaultCategory,
+    )
+
+    fun saveNzbgetConfig(config: NzbgetConfig) {
+        prefs.nzbgetBaseUrl = config.baseUrl.trim()
+        prefs.nzbgetUsername = config.username.trim()
+        prefs.nzbgetPassword = config.password
+        prefs.nzbgetDefaultCategory = config.defaultCategory.trim()
+    }
+
+    fun getActiveClient(): DownloadClientType =
+        runCatching { DownloadClientType.valueOf(prefs.activeClient) }.getOrDefault(DownloadClientType.SABNZBD)
+
+    fun setActiveClient(type: DownloadClientType) {
+        prefs.activeClient = type.name
     }
 
     private fun IndexerEntity.toDomain(apiKey: String) =

@@ -5,10 +5,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.cygnusx1.nzbconnect.data.prefs.SecurePrefs
 import org.cygnusx1.nzbconnect.domain.ApiResult
+import org.cygnusx1.nzbconnect.domain.ClientCapabilities
+import org.cygnusx1.nzbconnect.domain.DownloadClient
+import org.cygnusx1.nzbconnect.domain.DownloadPriority
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
 import org.cygnusx1.nzbconnect.domain.QueueSnapshot
 import org.cygnusx1.nzbconnect.domain.SabConfig
+import org.cygnusx1.nzbconnect.domain.ServerInfo
+import org.cygnusx1.nzbconnect.domain.ServerWarning
+import org.cygnusx1.nzbconnect.ui.formatSize
 import retrofit2.Response
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,7 +23,14 @@ import javax.inject.Singleton
 class SabnzbdRepository @Inject constructor(
     private val api: SabnzbdApi,
     private val prefs: SecurePrefs,
-) {
+) : DownloadClient {
+
+    override val capabilities = ClientCapabilities(
+        finishAction = true,
+        refreshFeeds = true,
+        restart = true,
+        speedLimitIsPercentage = true,
+    )
 
     private fun config(): SabConfig = SabConfig(
         baseUrl = prefs.sabBaseUrl,
@@ -41,7 +54,7 @@ class SabnzbdRepository @Inject constructor(
     }
 
     /** Hand an NZB URL to SAB (`mode=addurl`); SAB fetches it itself. */
-    suspend fun addUrl(nzbUrl: String, name: String, category: String?): ApiResult<Unit> {
+    override suspend fun addUrl(nzbUrl: String, name: String, category: String?): ApiResult<Unit> {
         val cat = category?.takeIf { it.isNotBlank() } ?: config().defaultCategory
         val extra = buildMap {
             put("mode", "addurl")
@@ -60,14 +73,14 @@ class SabnzbdRepository @Inject constructor(
     }
 
     /** Poll the active queue at [intervalMs] while collected. */
-    fun observeQueue(intervalMs: Long = 3000): Flow<ApiResult<QueueSnapshot>> = flow {
+    override fun observeQueue(intervalMs: Long): Flow<ApiResult<QueueSnapshot>> = flow {
         while (true) {
             emit(fetchQueue())
             delay(intervalMs)
         }
     }
 
-    suspend fun fetchQueue(): ApiResult<QueueSnapshot> =
+    override suspend fun fetchQueue(): ApiResult<QueueSnapshot> =
         call { val (u, p) = base(mapOf("mode" to "queue")); api.queue(u, p) }.let { res ->
             when (res) {
                 is ApiResult.Failure -> res
@@ -100,7 +113,7 @@ class SabnzbdRepository @Inject constructor(
             }
         }
 
-    suspend fun fetchHistory(limit: Int = 50): ApiResult<List<HistoryItem>> =
+    override suspend fun fetchHistory(limit: Int): ApiResult<List<HistoryItem>> =
         call {
             val (u, p) = base(mapOf("mode" to "history", "limit" to limit.toString()))
             api.history(u, p)
@@ -123,7 +136,7 @@ class SabnzbdRepository @Inject constructor(
             }
         }
 
-    suspend fun getCategories(): ApiResult<List<String>> =
+    override suspend fun getCategories(): ApiResult<List<String>> =
         call { val (u, p) = base(mapOf("mode" to "get_cats")); api.categories(u, p) }
             .let { res ->
                 when (res) {
@@ -132,25 +145,47 @@ class SabnzbdRepository @Inject constructor(
                 }
             }
 
-    suspend fun fetchStatus(): ApiResult<StatusResponse> =
+    private suspend fun fetchStatus(): ApiResult<StatusResponse> =
         call { val (u, p) = base(mapOf("mode" to "status")); api.status(u, p) }
 
-    suspend fun fetchServerStats(): ApiResult<ServerStatsResponse> =
+    private suspend fun fetchServerStats(): ApiResult<ServerStatsResponse> =
         call { val (u, p) = base(mapOf("mode" to "server_stats")); api.serverStats(u, p) }
 
-    suspend fun fetchWarnings(): ApiResult<WarningsResponse> =
+    private suspend fun fetchWarnings(): ApiResult<WarningsResponse> =
         call { val (u, p) = base(mapOf("mode" to "warnings")); api.warnings(u, p) }
 
-    suspend fun pauseAll(): ApiResult<Unit> = simple(mapOf("mode" to "pause"))
-    suspend fun resumeAll(): ApiResult<Unit> = simple(mapOf("mode" to "resume"))
+    override suspend fun fetchServerInfo(snapshot: QueueSnapshot?): ApiResult<ServerInfo> {
+        val stats = fetchServerStats()
+        if (stats is ApiResult.Failure) return stats
+        val s = (stats as ApiResult.Success).data
+        val status = fetchStatus()
+        val warnings = fetchWarnings()
+        val uptime = (status as? ApiResult.Success)?.data?.status?.uptime ?: "—"
+        val rawWarnings = (warnings as? ApiResult.Success)?.data?.warnings ?: emptyList()
+        return ApiResult.Success(
+            ServerInfo(
+                downloadToday = formatSize(s.day),
+                downloadWeek = formatSize(s.week),
+                downloadMonth = formatSize(s.month),
+                downloadTotal = formatSize(s.total),
+                freeSpace = snapshot?.diskSpace?.ifBlank { "—" } ?: "—",
+                uptime = uptime.ifBlank { "—" },
+                onFinish = snapshot?.finishAction?.ifBlank { "None" } ?: "None",
+                warnings = rawWarnings.map { ServerWarning(text = it.text, time = it.time) },
+            ),
+        )
+    }
 
-    suspend fun pauseItem(id: String): ApiResult<Unit> =
+    override suspend fun pauseAll(): ApiResult<Unit> = simple(mapOf("mode" to "pause"))
+    override suspend fun resumeAll(): ApiResult<Unit> = simple(mapOf("mode" to "resume"))
+
+    override suspend fun pauseItem(id: String): ApiResult<Unit> =
         simple(mapOf("mode" to "queue", "name" to "pause", "value" to id))
 
-    suspend fun resumeItem(id: String): ApiResult<Unit> =
+    override suspend fun resumeItem(id: String): ApiResult<Unit> =
         simple(mapOf("mode" to "queue", "name" to "resume", "value" to id))
 
-    suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
+    override suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
         simple(
             mapOf(
                 "mode" to "queue",
@@ -160,10 +195,10 @@ class SabnzbdRepository @Inject constructor(
             ),
         )
 
-    suspend fun clearHistory(): ApiResult<Unit> =
+    override suspend fun clearHistory(): ApiResult<Unit> =
         simple(mapOf("mode" to "history", "name" to "delete", "value" to "all"))
 
-    suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean = false): ApiResult<Unit> =
+    override suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
         simple(buildMap {
             put("mode", "history")
             put("name", "delete")
@@ -171,19 +206,45 @@ class SabnzbdRepository @Inject constructor(
             if (deleteFiles) put("del_files", "1")
         })
 
-    fun sabWebUrl(): String = config().baseUrl.trim().trimEnd('/')
+    override fun webUrl(): String = config().baseUrl.trim().trimEnd('/')
 
-    suspend fun restartSabnzbd(): ApiResult<Unit> = simple(mapOf("mode" to "restart"))
+    override suspend fun restart(): ApiResult<Unit> = simple(mapOf("mode" to "restart"))
 
-    suspend fun readRssNow(): ApiResult<Unit> = simple(mapOf("mode" to "rss_now"))
+    override suspend fun refreshFeeds(): ApiResult<Unit> = simple(mapOf("mode" to "rss_now"))
 
-    suspend fun setFinishAction(action: String): ApiResult<Unit> =
+    override suspend fun setFinishAction(action: String): ApiResult<Unit> =
         simple(mapOf("mode" to "queue", "name" to "change_complete_action", "value" to action))
 
-    suspend fun setSpeedLimit(percentage: Int): ApiResult<Unit> =
-        simple(mapOf("mode" to "queue", "name" to "speedlimit", "value" to percentage.toString()))
+    override suspend fun setSpeedLimit(value: Int): ApiResult<Unit> =
+        simple(mapOf("mode" to "queue", "name" to "speedlimit", "value" to value.toString()))
 
-    suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> =
+    override suspend fun setPriority(id: String, priority: DownloadPriority): ApiResult<Unit> {
+        val value = when (priority) {
+            DownloadPriority.FORCE -> 2
+            DownloadPriority.HIGH -> 1
+            DownloadPriority.NORMAL -> 0
+            DownloadPriority.LOW -> -1
+            DownloadPriority.STOP -> -4
+        }
+        return simple(mapOf("mode" to "queue", "name" to "priority", "value" to id, "value2" to value.toString()))
+    }
+
+    // SAB sets a job's password through the rename action's third value, keeping the name as-is.
+    override suspend fun setPassword(id: String, name: String, password: String): ApiResult<Unit> =
+        simple(
+            mapOf(
+                "mode" to "queue",
+                "name" to "rename",
+                "value" to id,
+                "value2" to name,
+                "value3" to password,
+            ),
+        )
+
+    override suspend fun rename(id: String, newName: String): ApiResult<Unit> =
+        simple(mapOf("mode" to "queue", "name" to "rename", "value" to id, "value2" to newName))
+
+    override suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> =
         call {
             val (u, p) = base(mapOf("mode" to "switch", "value" to id, "value2" to newPosition.toString()))
             api.switch(u, p)

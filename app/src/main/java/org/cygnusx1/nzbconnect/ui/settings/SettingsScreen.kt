@@ -47,13 +47,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.cygnusx1.nzbconnect.domain.Indexer
+import org.cygnusx1.nzbconnect.domain.NzbgetConfig
 import org.cygnusx1.nzbconnect.domain.SabConfig
+import org.cygnusx1.nzbconnect.ui.AppBrandTitle
+import org.cygnusx1.nzbconnect.ui.AppLogoMark
+import org.cygnusx1.nzbconnect.ui.AppWordmark
 import org.cygnusx1.nzbconnect.ui.IndexerLogo
 import org.cygnusx1.nzbconnect.ui.IndexerPresets
 import java.time.LocalDateTime
@@ -81,6 +86,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var editing by remember { mutableStateOf<Indexer?>(null) }
     var showDialog by remember { mutableStateOf(false) }
     var showSabDialog by remember { mutableStateOf(false) }
+    var showNzbgetDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -97,7 +103,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Settings") }) },
+        topBar = {
+            TopAppBar(
+                title = { AppBrandTitle("Settings") },
+            )
+        },
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { editing = null; showDialog = true }) {
@@ -136,12 +146,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 onEdit = { showSabDialog = true },
             )
 
+            Text("NZBGet server", style = MaterialTheme.typography.titleMedium)
+            NzbgetServerRow(
+                config = state.nzbget,
+                onEdit = { showNzbgetDialog = true },
+            )
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Save or restore your indexer and SABnzbd settings. The backup file " +
-                    "contains your API keys in plain text — keep it somewhere safe.",
+                "Save or restore your indexer, SABnzbd and NZBGet settings. The backup file " +
+                    "contains your API keys and passwords in plain text — keep it somewhere safe.",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -153,6 +169,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     Text("Restore")
                 }
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text("About", style = MaterialTheme.typography.titleMedium)
+            AboutSection()
         }
     }
 
@@ -179,6 +200,50 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             },
         )
     }
+
+    if (showNzbgetDialog) {
+        NzbgetEditDialog(
+            initial = state.nzbget,
+            onDismiss = { showNzbgetDialog = false },
+            onTest = viewModel::testNzbget,
+            onSave = { config ->
+                viewModel.saveNzbget(config)
+                showNzbgetDialog = false
+            },
+        )
+    }
+}
+
+/** App identity, version and a short description shown at the bottom of Settings. */
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty()
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AppLogoMark(modifier = Modifier.size(72.dp))
+        Column {
+            AppWordmark()
+            if (versionName.isNotBlank()) {
+                Text(
+                    "Version $versionName",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+    Text(
+        "A Usenet download manager for SABnzbd and NZBGet.",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -293,18 +358,120 @@ private fun SabEditDialog(
     )
 }
 
+@Composable
+private fun NzbgetServerRow(
+    config: NzbgetConfig,
+    onEdit: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                if (config.isConfigured) {
+                    Text(config.baseUrl, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = config.defaultCategory.takeIf { it.isNotBlank() }
+                            ?.let { "Default category: $it" }
+                            ?: "No default category",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text("Not configured", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Tap edit to connect your NZBGet server.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit") }
+        }
+    }
+}
+
+@Composable
+private fun NzbgetEditDialog(
+    initial: NzbgetConfig,
+    onDismiss: () -> Unit,
+    onTest: suspend (NzbgetConfig) -> String,
+    onSave: (NzbgetConfig) -> Unit,
+) {
+    var url by remember { mutableStateOf(initial.baseUrl) }
+    var user by remember { mutableStateOf(initial.username) }
+    var pass by remember { mutableStateOf(initial.password) }
+    var cat by remember { mutableStateOf(initial.defaultCategory) }
+
+    fun current() = NzbgetConfig(url.trim(), user.trim(), pass, cat.trim())
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("NZBGet server") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Base URL (e.g. https://host:6791)") },
+                    singleLine = true,
+                    keyboardOptions = UrlKeyboardOptions,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = user,
+                    onValueChange = { user = it },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.None,
+                        autoCorrectEnabled = false,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                SecretField(value = pass, onValueChange = { pass = it }, label = "Password")
+                OutlinedTextField(
+                    value = cat,
+                    onValueChange = { cat = it },
+                    label = { Text("Default category (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DialogTestRow(enabled = url.isNotBlank() && user.isNotBlank()) { onTest(current()) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = url.isNotBlank() && user.isNotBlank(),
+                onClick = { onSave(current()) },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 /** An API-key text field that masks its value but can reveal it via an eye toggle. */
 @Composable
 private fun ApiKeyField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+) = SecretField(value = value, onValueChange = onValueChange, label = "API key", modifier = modifier)
+
+/** A masked secret field (API key, password) that can reveal its value via an eye toggle. */
+@Composable
+private fun SecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
 ) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text("API key") },
+        label = { Text(label) },
         singleLine = true,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(
@@ -315,7 +482,7 @@ private fun ApiKeyField(
             IconButton(onClick = { visible = !visible }) {
                 Icon(
                     imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = if (visible) "Hide API key" else "Show API key",
+                    contentDescription = if (visible) "Hide $label" else "Show $label",
                 )
             }
         },

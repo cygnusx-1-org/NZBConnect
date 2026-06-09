@@ -1,20 +1,25 @@
 package org.cygnusx1.nzbconnect.ui.queue
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import org.cygnusx1.nzbconnect.data.sab.SabnzbdRepository
+import org.cygnusx1.nzbconnect.data.DownloadClientRouter
 import org.cygnusx1.nzbconnect.domain.ApiResult
+import org.cygnusx1.nzbconnect.domain.ClientCapabilities
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
+import org.cygnusx1.nzbconnect.domain.DownloadPriority
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
-import org.cygnusx1.nzbconnect.domain.SabInfo
-import org.cygnusx1.nzbconnect.domain.SabWarning
+import org.cygnusx1.nzbconnect.domain.ServerInfo
 import org.cygnusx1.nzbconnect.domain.QueueSnapshot
-import org.cygnusx1.nzbconnect.ui.formatSize
 import org.cygnusx1.nzbconnect.ui.parseSizeMb
 import javax.inject.Inject
 
@@ -35,8 +40,17 @@ data class QueueUiState(
     val loadingHistory: Boolean = false,
     val refreshingQueue: Boolean = false,
     val message: String? = null,
-    val sabInfo: SabInfo? = null,
-    val sabInfoLoading: Boolean = false,
+    val serverInfo: ServerInfo? = null,
+    val serverInfoLoading: Boolean = false,
+    val clientName: String = "SABnzbd",
+    val selectedClient: DownloadClientType = DownloadClientType.SABNZBD,
+    val availableClients: List<DownloadClientType> = emptyList(),
+    val capabilities: ClientCapabilities = ClientCapabilities(
+        finishAction = true,
+        refreshFeeds = true,
+        restart = true,
+        speedLimitIsPercentage = true,
+    ),
     val queueSort: QueueSortOrder = QueueSortOrder.DEFAULT,
     val historySort: HistorySortOrder = HistorySortOrder.DEFAULT,
     val historyMultiSelect: Boolean = false,
@@ -65,27 +79,102 @@ data class QueueUiState(
 
 @HiltViewModel
 class QueueViewModel @Inject constructor(
-    private val repository: SabnzbdRepository,
+    private val repository: DownloadClientRouter,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(QueueUiState())
-    val state: StateFlow<QueueUiState> = _state.asStateFlow()
+    private val _state: MutableStateFlow<QueueUiState>
+    val state: StateFlow<QueueUiState>
+
+    /** The running queue-poll loop for the selected client; cancelled/restarted on switch. */
+    private var pollJob: Job? = null
+
+    /** Bumped on every user action / authoritative refresh. A poll started before a bump is
+     * discarded on completion so a stale in-flight fetch can't revert an optimistic change. */
+    private var stateVersion = 0
+
+    /** >0 while a mutating action is running; polls don't apply their results meanwhile. */
+    private var pendingMutations = 0
+
+    /**
+     * Per-item pause intent (id -> intended-paused). NZBGet keeps reporting an actively
+     * downloading item as "Downloading" for several seconds after a pause, so we keep showing
+     * the user's intent and ignore the contradicting server status until it catches up.
+     */
+    private val pendingItemPause = mutableMapOf<String, Boolean>()
 
     init {
-        viewModelScope.launch {
-            repository.observeQueue().collect { result ->
-                _state.value = when (result) {
-                    is ApiResult.Success -> _state.value.copy(snapshot = result.data, error = null)
-                    is ApiResult.Failure -> _state.value.copy(error = result.message)
+        val available = repository.configuredClients()
+        val selected = repository.defaultClient()
+        _state = MutableStateFlow(
+            QueueUiState(
+                selectedClient = selected,
+                availableClients = available,
+                clientName = repository.name(selected),
+                capabilities = repository.client(selected).capabilities,
+            ),
+        )
+        state = _state.asStateFlow()
+        startPolling()
+    }
+
+    /** The client currently shown on the Downloads screen. */
+    private fun current() = repository.client(_state.value.selectedClient)
+
+    private fun startPolling() {
+        pollJob?.cancel()
+        val client = current()
+        pollJob = viewModelScope.launch {
+            Log.d("QueueVM", "poll loop START client=${_state.value.selectedClient}")
+            try {
+                while (isActive) {
+                    val versionAtStart = stateVersion
+                    val result = client.fetchQueue()
+                    val paused = (result as? ApiResult.Success)?.data?.paused
+                    val items = (result as? ApiResult.Success)?.data?.items
+                        ?.joinToString { "${it.id}:${it.status}" }
+                    // Drop the result if an action ran while this fetch was in flight (or is still
+                    // running), so a stale "downloading" can't overwrite a just-applied pause.
+                    if (pendingMutations == 0 && stateVersion == versionAtStart) {
+                        Log.d("QueueVM", "poll APPLY paused=$paused items=[$items] (v=$versionAtStart)")
+                        _state.value = when (result) {
+                            is ApiResult.Success -> _state.value.copy(snapshot = reconcile(result.data), error = null)
+                            is ApiResult.Failure -> _state.value.copy(error = result.message)
+                        }
+                    } else {
+                        Log.d("QueueVM", "poll SKIP paused=$paused (vStart=$versionAtStart vNow=$stateVersion pending=$pendingMutations)")
+                    }
+                    delay(2000)
                 }
+            } catch (e: Throwable) {
+                Log.e("QueueVM", "poll loop CRASHED", e)
+                throw e
+            } finally {
+                Log.d("QueueVM", "poll loop EXIT (isActive=$isActive)")
             }
         }
+    }
+
+    /** Switch the Downloads screen to a different configured client. */
+    fun selectClient(type: DownloadClientType) {
+        if (type == _state.value.selectedClient) return
+        stateVersion++
+        _state.value = _state.value.copy(
+            selectedClient = type,
+            clientName = repository.name(type),
+            capabilities = repository.client(type).capabilities,
+            snapshot = null,
+            history = emptyList(),
+            serverInfo = null,
+            error = null,
+        )
+        startPolling()
+        refreshHistory()
     }
 
     fun refreshHistory() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loadingHistory = true)
-            _state.value = when (val res = repository.fetchHistory()) {
+            _state.value = when (val res = current().fetchHistory()) {
                 is ApiResult.Success -> _state.value.copy(history = res.data, loadingHistory = false, error = null)
                 is ApiResult.Failure -> _state.value.copy(loadingHistory = false, error = res.message)
             }
@@ -93,43 +182,21 @@ class QueueViewModel @Inject constructor(
     }
 
     fun togglePauseAll() {
-        viewModelScope.launch {
-            val paused = _state.value.snapshot?.paused == true
-            val res = if (paused) repository.resumeAll() else repository.pauseAll()
-            reportIfError(res)
-            refreshQueueNow()
-        }
+        val snap = _state.value.snapshot ?: return
+        val wasPaused = snap.paused
+        Log.d("QueueVM", "togglePauseAll(GLOBAL) wasPaused=$wasPaused -> optimistic ${!wasPaused}")
+        // Optimistic: flip immediately so the button responds without waiting for the round-trip.
+        _state.value = _state.value.copy(snapshot = snap.copy(paused = !wasPaused))
+        act { if (wasPaused) current().resumeAll() else current().pauseAll() }
     }
 
-    fun loadSabInfo() {
+    fun loadServerInfo() {
         val snap = _state.value.snapshot
         viewModelScope.launch {
-            _state.value = _state.value.copy(sabInfoLoading = true)
-            val statsResult = repository.fetchServerStats()
-            val statusResult = repository.fetchStatus()
-            val warningsResult = repository.fetchWarnings()
-            if (statsResult is ApiResult.Success) {
-                val s = statsResult.data
-                val rawWarnings = (warningsResult as? ApiResult.Success)?.data?.warnings ?: emptyList()
-                val uptime = (statusResult as? ApiResult.Success)?.data?.status?.uptime ?: "—"
-                _state.value = _state.value.copy(
-                    sabInfo = SabInfo(
-                        downloadToday = formatSize(s.day),
-                        downloadWeek = formatSize(s.week),
-                        downloadMonth = formatSize(s.month),
-                        downloadTotal = formatSize(s.total),
-                        freeSpace = snap?.diskSpace?.ifBlank { "—" } ?: "—",
-                        uptime = uptime.ifBlank { "—" },
-                        onFinish = snap?.finishAction?.ifBlank { "None" } ?: "None",
-                        warnings = rawWarnings.map { SabWarning(text = it.text, time = it.time) },
-                    ),
-                    sabInfoLoading = false,
-                )
-            } else {
-                _state.value = _state.value.copy(
-                    sabInfoLoading = false,
-                    message = (statsResult as? ApiResult.Failure)?.message,
-                )
+            _state.value = _state.value.copy(serverInfoLoading = true)
+            _state.value = when (val res = current().fetchServerInfo(snap)) {
+                is ApiResult.Success -> _state.value.copy(serverInfo = res.data, serverInfoLoading = false)
+                is ApiResult.Failure -> _state.value.copy(serverInfoLoading = false, message = res.message)
             }
         }
     }
@@ -142,13 +209,65 @@ class QueueViewModel @Inject constructor(
         }
     }
 
-    fun pauseItem(id: String) = act { repository.pauseItem(id) }
-    fun resumeItem(id: String) = act { repository.resumeItem(id) }
-    fun deleteItem(id: String, deleteFiles: Boolean) = act { repository.deleteItem(id, deleteFiles) }
+    fun pauseItem(id: String) {
+        Log.d("QueueVM", "pauseItem(ITEM) id=$id -> optimistic Paused")
+        pendingItemPause[id] = true
+        updateItem(id) { it.copy(status = "Paused") }
+        act { current().pauseItem(id) }
+    }
+
+    fun resumeItem(id: String) {
+        Log.d("QueueVM", "resumeItem(ITEM) id=$id -> optimistic Queued")
+        pendingItemPause[id] = false
+        updateItem(id) { it.copy(status = "Queued") }
+        act { current().resumeItem(id) }
+    }
+
+    /**
+     * Overlay the user's per-item pause intent onto a server snapshot: keep showing the intended
+     * status until the server agrees, then clear the intent. Intents for items that have left the
+     * queue are dropped.
+     */
+    private fun reconcile(snap: QueueSnapshot): QueueSnapshot {
+        if (pendingItemPause.isEmpty()) return snap
+        pendingItemPause.keys.retainAll(snap.items.map { it.id }.toSet())
+        if (pendingItemPause.isEmpty()) return snap
+        val items = snap.items.map { item ->
+            val intendPaused = pendingItemPause[item.id] ?: return@map item
+            val serverPaused = item.status.equals("paused", ignoreCase = true)
+            if (serverPaused == intendPaused) {
+                pendingItemPause.remove(item.id) // server caught up
+                item
+            } else if (intendPaused) {
+                item.copy(status = "Paused")
+            } else {
+                item.copy(status = if (item.status.equals("paused", true)) "Queued" else item.status)
+            }
+        }
+        return snap.copy(items = items)
+    }
+
+    fun deleteItem(id: String, deleteFiles: Boolean) {
+        removeItem(id)
+        act { current().deleteItem(id, deleteFiles) }
+    }
+
+    /** Optimistically patch a single queue item in the current snapshot. */
+    private fun updateItem(id: String, transform: (QueueItem) -> QueueItem) {
+        val snap = _state.value.snapshot ?: return
+        _state.value = _state.value.copy(
+            snapshot = snap.copy(items = snap.items.map { if (it.id == id) transform(it) else it }),
+        )
+    }
+
+    private fun removeItem(id: String) {
+        val snap = _state.value.snapshot ?: return
+        _state.value = _state.value.copy(snapshot = snap.copy(items = snap.items.filterNot { it.id == id }))
+    }
 
     fun clearHistory() {
         viewModelScope.launch {
-            val res = repository.clearHistory()
+            val res = current().clearHistory()
             reportIfError(res)
             if (res is ApiResult.Success) refreshHistory()
         }
@@ -156,7 +275,7 @@ class QueueViewModel @Inject constructor(
 
     fun deleteHistoryItem(id: String, deleteFiles: Boolean = false) {
         viewModelScope.launch {
-            val res = repository.deleteHistoryItem(id, deleteFiles)
+            val res = current().deleteHistoryItem(id, deleteFiles)
             reportIfError(res)
             if (res is ApiResult.Success) refreshHistory()
         }
@@ -188,7 +307,7 @@ class QueueViewModel @Inject constructor(
         val ids = _state.value.selectedHistoryIds.toList()
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            ids.forEach { id -> repository.deleteHistoryItem(id) }
+            ids.forEach { id -> current().deleteHistoryItem(id) }
             _state.value = _state.value.copy(
                 historyMultiSelect = false,
                 selectedHistoryIds = emptySet(),
@@ -197,42 +316,82 @@ class QueueViewModel @Inject constructor(
         }
     }
 
-    fun setSpeedLimit(percentage: Int) = act { repository.setSpeedLimit(percentage) }
+    fun setSpeedLimit(value: Int) = act { current().setSpeedLimit(value) }
 
     fun moveItem(id: String, newPosition: Int) {
-        viewModelScope.launch { reportIfError(repository.moveItem(id, newPosition)) }
+        viewModelScope.launch { reportIfError(current().moveItem(id, newPosition)) }
     }
 
-    val sabWebUrl: String get() = repository.sabWebUrl()
+    // --- Per-item overflow actions ---------------------------------------------
 
-    fun restartSabnzbd() {
-        viewModelScope.launch { reportIfError(repository.restartSabnzbd()) }
+    fun setItemPriority(id: String, priority: DownloadPriority) = act { current().setPriority(id, priority) }
+
+    fun setItemPassword(id: String, name: String, password: String) =
+        act { current().setPassword(id, name, password) }
+
+    fun renameItem(id: String, newName: String) = act { current().rename(id, newName) }
+
+    fun moveItemToTop(id: String) = act { current().moveItem(id, 0) }
+
+    fun moveItemToEnd(id: String): Unit {
+        val items = _state.value.snapshot?.items ?: return
+        if (items.isNotEmpty()) act { current().moveItem(id, items.lastIndex) }
     }
 
-    fun readRssNow() {
-        viewModelScope.launch { reportIfError(repository.readRssNow()) }
+    fun moveItemUp(id: String, by: Int = 10): Unit {
+        val items = _state.value.snapshot?.items ?: return
+        val cur = items.indexOfFirst { it.id == id }
+        if (cur >= 0) act { current().moveItem(id, (cur - by).coerceAtLeast(0)) }
+    }
+
+    fun moveItemDown(id: String, by: Int = 10): Unit {
+        val items = _state.value.snapshot?.items ?: return
+        val cur = items.indexOfFirst { it.id == id }
+        if (cur >= 0) act { current().moveItem(id, (cur + by).coerceAtMost(items.lastIndex)) }
+    }
+
+    val webUrl: String get() = current().webUrl()
+
+    fun restart() {
+        viewModelScope.launch { reportIfError(current().restart()) }
+    }
+
+    fun refreshFeeds() {
+        viewModelScope.launch { reportIfError(current().refreshFeeds()) }
     }
 
     fun setFinishAction(action: String) {
         viewModelScope.launch {
-            val res = repository.setFinishAction(action)
+            val res = current().setFinishAction(action)
             reportIfError(res)
             refreshQueueNow()
         }
     }
 
     private fun act(block: suspend () -> ApiResult<Unit>) {
+        pendingMutations++
+        stateVersion++
+        Log.d("QueueVM", "act START pending=$pendingMutations v=$stateVersion")
         viewModelScope.launch {
-            reportIfError(block())
-            refreshQueueNow()
+            try {
+                val r = block()
+                Log.d("QueueVM", "act block result=$r")
+                reportIfError(r)
+                refreshQueueNow()
+            } finally {
+                pendingMutations--
+                Log.d("QueueVM", "act END pending=$pendingMutations")
+            }
         }
     }
 
     private suspend fun refreshQueueNow() {
-        when (val res = repository.fetchQueue()) {
-            is ApiResult.Success -> _state.value = _state.value.copy(snapshot = res.data)
-            is ApiResult.Failure -> Unit
-        }
+        val res = current().fetchQueue()
+        stateVersion++ // invalidate any poll that was in flight during this authoritative fetch
+        val paused = (res as? ApiResult.Success)?.data?.paused
+        val items = (res as? ApiResult.Success)?.data?.items?.joinToString { "${it.id}:${it.status}" }
+        Log.d("QueueVM", "refreshQueueNow APPLY paused=$paused items=[$items] (v=$stateVersion)")
+        if (res is ApiResult.Success) _state.value = _state.value.copy(snapshot = reconcile(res.data))
     }
 
     private fun reportIfError(res: ApiResult<Unit>) {

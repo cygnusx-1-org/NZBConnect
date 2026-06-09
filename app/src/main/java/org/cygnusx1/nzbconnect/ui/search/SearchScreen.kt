@@ -102,11 +102,13 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
         composable(SearchRoutes.DETAIL) {
             ResultDetailScreen(
                 result = state.selectedResult,
-                sabCategories = state.sabCategories,
-                onLoadSabCategories = viewModel::loadSabCategories,
+                categories = state.clientCategories,
+                clientName = state.clientName,
+                availableClients = state.availableClients,
+                onLoadCategories = viewModel::loadClientCategories,
                 onBack = { navController.popBackStack() },
-                onSend = { category ->
-                    viewModel.sendSelectedToSab(category)
+                onSend = { type, category ->
+                    viewModel.sendSelectedTo(type, category)
                     navController.popBackStack()
                 },
             )

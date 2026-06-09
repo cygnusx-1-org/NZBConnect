@@ -17,6 +17,7 @@ import org.cygnusx1.nzbconnect.data.local.CategoryDao
 import org.cygnusx1.nzbconnect.data.local.IndexerDao
 import org.cygnusx1.nzbconnect.data.local.SearchHistoryDao
 import org.cygnusx1.nzbconnect.data.newznab.NewznabApi
+import org.cygnusx1.nzbconnect.data.nzbget.NzbgetApi
 import org.cygnusx1.nzbconnect.data.prefs.SecurePrefs
 import org.cygnusx1.nzbconnect.data.sab.SabnzbdApi
 import retrofit2.Retrofit
@@ -73,6 +74,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideSabnzbdApi(retrofit: Retrofit): SabnzbdApi = retrofit.create(SabnzbdApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideNzbgetApi(retrofit: Retrofit): NzbgetApi = retrofit.create(NzbgetApi::class.java)
 
     @Provides
     @Singleton

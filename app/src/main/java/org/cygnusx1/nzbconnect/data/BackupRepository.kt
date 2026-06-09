@@ -7,7 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
 import org.cygnusx1.nzbconnect.domain.Indexer
+import org.cygnusx1.nzbconnect.domain.NzbgetConfig
 import org.cygnusx1.nzbconnect.domain.SabConfig
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,9 +17,11 @@ import javax.inject.Singleton
 /** Serializable snapshot of all user configuration. Note: API keys are stored in clear. */
 @Serializable
 data class BackupData(
-    val version: Int = 1,
+    val version: Int = 2,
     val indexers: List<BackupIndexer> = emptyList(),
     val sab: BackupSab = BackupSab(),
+    val nzbget: BackupNzbget = BackupNzbget(),
+    val activeClient: String = DownloadClientType.SABNZBD.name,
 )
 
 @Serializable
@@ -32,6 +36,14 @@ data class BackupIndexer(
 data class BackupSab(
     val baseUrl: String = "",
     val apiKey: String = "",
+    val defaultCategory: String = "",
+)
+
+@Serializable
+data class BackupNzbget(
+    val baseUrl: String = "",
+    val username: String = "",
+    val password: String = "",
     val defaultCategory: String = "",
 )
 
@@ -59,6 +71,10 @@ class BackupRepository @Inject constructor(
                 sab = settingsRepository.getSabConfig().let {
                     BackupSab(it.baseUrl, it.apiKey, it.defaultCategory)
                 },
+                nzbget = settingsRepository.getNzbgetConfig().let {
+                    BackupNzbget(it.baseUrl, it.username, it.password, it.defaultCategory)
+                },
+                activeClient = settingsRepository.getActiveClient().name,
             )
             val text = json.encodeToString(BackupData.serializer(), data)
             context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
@@ -83,6 +99,16 @@ class BackupRepository @Inject constructor(
             settingsRepository.saveSabConfig(
                 SabConfig(data.sab.baseUrl, data.sab.apiKey, data.sab.defaultCategory),
             )
+            settingsRepository.saveNzbgetConfig(
+                NzbgetConfig(
+                    data.nzbget.baseUrl,
+                    data.nzbget.username,
+                    data.nzbget.password,
+                    data.nzbget.defaultCategory,
+                ),
+            )
+            runCatching { DownloadClientType.valueOf(data.activeClient) }.getOrNull()
+                ?.let { settingsRepository.setActiveClient(it) }
             data.indexers.size
         }
     }

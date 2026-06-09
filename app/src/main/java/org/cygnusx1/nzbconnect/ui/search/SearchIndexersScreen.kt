@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.cygnusx1.nzbconnect.domain.Indexer
+import org.cygnusx1.nzbconnect.ui.AppBrandTitle
 import org.cygnusx1.nzbconnect.ui.IndexerLogo
 import org.cygnusx1.nzbconnect.ui.IndexerPresets
 
@@ -38,13 +39,7 @@ fun SearchIndexersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "Search",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
+                title = { AppBrandTitle("Search") },
             )
         },
     ) { padding ->

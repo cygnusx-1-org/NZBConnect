@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1B5E20</color>
+    <color name="ic_launcher_background">#000000</color>
     <!-- Splash/window background (light). Overridden in values-night for dark mode. -->
     <color name="splash_background">#FFFBFE</color>
 </resources>

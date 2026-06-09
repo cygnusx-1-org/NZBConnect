@@ -40,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
 import org.cygnusx1.nzbconnect.domain.SearchResult
+import org.cygnusx1.nzbconnect.domain.displayName
 import org.cygnusx1.nzbconnect.ui.formatAge
 import org.cygnusx1.nzbconnect.ui.formatSize
 
@@ -48,10 +50,12 @@ import org.cygnusx1.nzbconnect.ui.formatSize
 @Composable
 fun ResultDetailScreen(
     result: SearchResult?,
-    sabCategories: List<String>,
-    onLoadSabCategories: () -> Unit,
+    categories: List<String>,
+    clientName: String,
+    availableClients: List<DownloadClientType>,
+    onLoadCategories: () -> Unit,
     onBack: () -> Unit,
-    onSend: (category: String?) -> Unit,
+    onSend: (type: DownloadClientType, category: String?) -> Unit,
 ) {
     if (result == null) {
         Scaffold(topBar = { TopAppBar(title = { Text("Details") }) }) { padding ->
@@ -64,7 +68,8 @@ fun ResultDetailScreen(
 
     var tab by remember { mutableIntStateOf(0) }
     var category by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { onLoadSabCategories() }
+    var showSendMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onLoadCategories() }
 
     Scaffold(
         topBar = {
@@ -78,8 +83,32 @@ fun ResultDetailScreen(
                     Text(result.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
                 },
                 actions = {
-                    TextButton(onClick = { onSend(category) }) {
-                        Text("SEND TO SAB", fontWeight = FontWeight.Bold)
+                    Box {
+                        TextButton(
+                            enabled = availableClients.isNotEmpty(),
+                            onClick = {
+                                if (availableClients.size == 1) {
+                                    onSend(availableClients.first(), category)
+                                } else {
+                                    showSendMenu = true
+                                }
+                            },
+                        ) {
+                            val label = if (availableClients.size == 1) {
+                                "SEND TO ${availableClients.first().displayName.uppercase()}"
+                            } else {
+                                "SEND TO…"
+                            }
+                            Text(label, fontWeight = FontWeight.Bold)
+                        }
+                        DropdownMenu(expanded = showSendMenu, onDismissRequest = { showSendMenu = false }) {
+                            availableClients.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text(type.displayName) },
+                                    onClick = { showSendMenu = false; onSend(type, category) },
+                                )
+                            }
+                        }
                     }
                 },
             )
@@ -103,7 +132,8 @@ fun ResultDetailScreen(
             when (tab) {
                 0 -> DetailsTab(
                     result = result,
-                    sabCategories = sabCategories,
+                    categories = categories,
+                    clientName = clientName,
                     selectedCategory = category,
                     onCategoryChange = { category = it },
                 )
@@ -117,7 +147,8 @@ fun ResultDetailScreen(
 @Composable
 private fun DetailsTab(
     result: SearchResult,
-    sabCategories: List<String>,
+    categories: List<String>,
+    clientName: String,
     selectedCategory: String?,
     onCategoryChange: (String?) -> Unit,
 ) {
@@ -136,7 +167,7 @@ private fun DetailsTab(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
 
-        Text("SABnzbd category", style = MaterialTheme.typography.labelLarge)
+        Text("$clientName category", style = MaterialTheme.typography.labelLarge)
         var expanded by remember { mutableStateOf(false) }
         Box {
             OutlinedButton(onClick = { expanded = true }) {
@@ -146,7 +177,7 @@ private fun DetailsTab(
                 DropdownMenuItem(text = { Text("Default category") }, onClick = {
                     onCategoryChange(null); expanded = false
                 })
-                sabCategories.forEach { cat ->
+                categories.forEach { cat ->
                     DropdownMenuItem(text = { Text(cat) }, onClick = {
                         onCategoryChange(cat); expanded = false
                     })

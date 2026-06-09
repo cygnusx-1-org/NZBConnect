@@ -10,12 +10,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.cygnusx1.nzbconnect.data.DownloadClientRouter
 import org.cygnusx1.nzbconnect.data.SettingsRepository
 import org.cygnusx1.nzbconnect.data.local.SearchHistoryDao
 import org.cygnusx1.nzbconnect.data.local.SearchHistoryEntity
 import org.cygnusx1.nzbconnect.data.newznab.NewznabRepository
-import org.cygnusx1.nzbconnect.data.sab.SabnzbdRepository
 import org.cygnusx1.nzbconnect.domain.ApiResult
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
 import org.cygnusx1.nzbconnect.domain.Indexer
 import org.cygnusx1.nzbconnect.domain.NewznabCategory
 import org.cygnusx1.nzbconnect.domain.SearchPage
@@ -51,7 +52,9 @@ data class SearchUiState(
     val filter: ResultFilter = ResultFilter(),
     val pendingScope: SearchScope? = null,
     val selectedResult: SearchResult? = null,
-    val sabCategories: List<String> = emptyList(),
+    val clientCategories: List<String> = emptyList(),
+    val clientName: String = "SABnzbd",
+    val availableClients: List<DownloadClientType> = emptyList(),
     val message: String? = null,
 ) {
     /** Categories shown at the current drill level. */
@@ -66,11 +69,11 @@ data class SearchUiState(
 class SearchViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val newznabRepository: NewznabRepository,
-    private val sabnzbdRepository: SabnzbdRepository,
+    private val downloadClient: DownloadClientRouter,
     private val searchHistoryDao: SearchHistoryDao,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(SearchUiState())
+    private val _state = MutableStateFlow(SearchUiState(clientName = downloadClient.activeName()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     val recentSearches: StateFlow<List<String>> =
@@ -199,21 +202,25 @@ class SearchViewModel @Inject constructor(
     fun selectResult(result: SearchResult) = _state.update { it.copy(selectedResult = result) }
     fun clearSelectedResult() = _state.update { it.copy(selectedResult = null) }
 
-    fun sendSelectedToSab(category: String?) {
+    fun sendSelectedTo(type: DownloadClientType, category: String?) {
         val result = _state.value.selectedResult ?: return
         viewModelScope.launch {
-            when (val res = sabnzbdRepository.addUrl(result.nzbUrl, result.title, category)) {
-                is ApiResult.Success -> showMessage("Sent “${result.title.take(40)}” to SABnzbd")
+            when (val res = downloadClient.client(type).addUrl(result.nzbUrl, result.title, category)) {
+                is ApiResult.Success -> showMessage("Sent “${result.title.take(40)}” to ${downloadClient.name(type)}")
                 is ApiResult.Failure -> showMessage("Failed: ${res.message}")
             }
         }
     }
 
-    fun loadSabCategories() {
-        if (_state.value.sabCategories.isNotEmpty()) return
+    fun loadClientCategories() {
+        val available = downloadClient.configuredClients()
+        val default = downloadClient.defaultClient()
+        _state.update { it.copy(availableClients = available, clientName = downloadClient.name(default)) }
+        if (_state.value.clientCategories.isNotEmpty()) return
         viewModelScope.launch {
-            when (val res = sabnzbdRepository.getCategories()) {
-                is ApiResult.Success -> _state.update { it.copy(sabCategories = res.data) }
+            // Categories come from the default client (shown in the picker dropdown).
+            when (val res = downloadClient.client(default).getCategories()) {
+                is ApiResult.Success -> _state.update { it.copy(clientCategories = res.data) }
                 is ApiResult.Failure -> Unit
             }
         }

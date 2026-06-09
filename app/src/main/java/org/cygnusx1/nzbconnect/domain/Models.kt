@@ -18,6 +18,43 @@ data class SabConfig(
     val isConfigured: Boolean get() = baseUrl.isNotBlank() && apiKey.isNotBlank()
 }
 
+/** NZBGet server configuration. NZBGet authenticates with HTTP Basic (username/password). */
+data class NzbgetConfig(
+    val baseUrl: String = "",
+    val username: String = "",
+    val password: String = "",
+    val defaultCategory: String = "",
+) {
+    val isConfigured: Boolean get() = baseUrl.isNotBlank() && username.isNotBlank()
+}
+
+/** Which download client the app currently drives. */
+enum class DownloadClientType { SABNZBD, NZBGET }
+
+/** Queue-item download priority, mapped to each client's own scale. */
+enum class DownloadPriority(val label: String) {
+    FORCE("Force"), HIGH("High"), NORMAL("Normal"), LOW("Low"), STOP("Stop")
+}
+
+/** User-facing name for a client type. */
+val DownloadClientType.displayName: String
+    get() = when (this) {
+        DownloadClientType.SABNZBD -> "SABnzbd"
+        DownloadClientType.NZBGET -> "NZBGet"
+    }
+
+/**
+ * Per-client feature flags so the UI can hide actions a client can't perform.
+ * [speedLimitIsPercentage] is true for SAB (limit is a % of the configured max) and false for
+ * NZBGet (limit is an absolute rate in KB/s).
+ */
+data class ClientCapabilities(
+    val finishAction: Boolean,
+    val refreshFeeds: Boolean,
+    val restart: Boolean,
+    val speedLimitIsPercentage: Boolean,
+)
+
 /**
  * A Newznab category advertised by an indexer's caps endpoint. [parentId] is empty for
  * top-level categories; subcategories carry their parent's id so the UI can drill down.
@@ -85,9 +122,10 @@ data class QueueSnapshot(
     val items: List<QueueItem>,
 )
 
-data class SabWarning(val text: String, val time: String)
+data class ServerWarning(val text: String, val time: String)
 
-data class SabInfo(
+/** Aggregated server stats shown in the Downloads info sidebar (SAB or NZBGet). */
+data class ServerInfo(
     val downloadToday: String,
     val downloadWeek: String,
     val downloadMonth: String,
@@ -95,5 +133,5 @@ data class SabInfo(
     val freeSpace: String,
     val uptime: String,
     val onFinish: String,
-    val warnings: List<SabWarning>,
+    val warnings: List<ServerWarning>,
 )
