@@ -3,6 +3,7 @@ package org.cygnusx1.nzbconnect.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -108,13 +110,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 title = { AppBrandTitle("Settings") },
             )
         },
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { editing = null; showDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add Newznab indexer")
             }
         },
     ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize(),
+        ) {
         Column(
             modifier = Modifier
                 .padding(padding)
@@ -174,6 +178,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             Text("About", style = MaterialTheme.typography.titleMedium)
             AboutSection()
+        }
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) { data ->
+            // Default Snackbar() hardcodes 12.dp padding on all sides; drop the bottom
+            // padding so the bar rests flush on top of the navigation/tab bar.
+            Snackbar(
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp),
+            ) {
+                Text(data.visuals.message)
+            }
+        }
         }
     }
 
