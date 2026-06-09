@@ -43,6 +43,13 @@ A Usenet download manager written in Kotlin for Android. It connects to your SAB
 
 ---
 
+# Screenshots
+<p align="center">
+  <img width="256px" src="assets/screenshots/search.png" alt="Search">
+</p>
+
+See [more screenshots](assets/screenshots).
+
 # Installation
 You can easily install and update NZBConnect with [Discoverium](https://github.com/cygnusx-1-org/Discoverium/) via its search button.
 <p align="left">
