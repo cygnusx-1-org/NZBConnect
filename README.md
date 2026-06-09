@@ -29,7 +29,7 @@
   </a>
 </p>
 
-A Usenet download manager written in Kotlin for Android. It connects to your SABnzbd and NZBGet servers and searches Newznab indexers — no ads, with a clean UI.
+A Usenet download manager written in Kotlin for Android. It connects to your SABnzbd and NZBGet servers and searches Newznab indexers. It has no ads, and a clean UI.
 
 <br>
 
