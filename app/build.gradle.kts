@@ -1,13 +1,35 @@
-import com.android.build.OutputFile
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import com.android.build.api.artifact.ArtifactTransformationRequest
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.BuiltArtifact
+import com.android.build.api.variant.FilterConfiguration
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.Directory
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.workers.WorkAction
+import org.gradle.workers.WorkParameters
+import org.gradle.workers.WorkerExecutor
+import java.io.File
+import java.nio.file.Files
 import java.util.Properties
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // AGP 9 provides built-in Kotlin (registers the `kotlin` extension), so the
+    // standalone kotlin.android plugin is NOT applied. KSP is incompatible with
+    // built-in Kotlin, so Room/Hilt run through KAPT via com.android.legacy-kapt.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
+    alias(libs.plugins.android.legacy.kapt)
     alias(libs.plugins.hilt)
     alias(libs.plugins.android.git.version)
 }
@@ -59,11 +81,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    kotlinOptions {
-        jvmTarget = "21"
+        sourceCompatibility = JavaVersion.VERSION_24
+        targetCompatibility = JavaVersion.VERSION_24
     }
     buildFeatures {
         compose = true
@@ -78,24 +97,28 @@ android {
         }
     }
 
-    applicationVariants.all {
-        val variant = this
-        outputs.all {
-            val output = this as BaseVariantOutputImpl
-            val appName = "nzbconnect"
-            val baseAbiVersion = output.getFilter(OutputFile.ABI)
-            val buildType = variant.buildType.name
-            val versionName = variant.versionName
+}
 
-            // Join only the non-null segments so the ABI part drops out cleanly
-            // when ABI splits aren't enabled.
-            val artifactName = if (buildType == "debug") {
-                listOfNotNull(appName, buildType, baseAbiVersion, versionName)
-            } else {
-                listOfNotNull(appName, baseAbiVersion, versionName)
-            }.joinToString("-")
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_24)
+    }
+}
 
-            output.outputFileName = "$artifactName.apk"
+// AGP 9 removed the legacy applicationVariants output API. Reproduce the per-ABI
+// APK naming ("nzbconnect[-debug]-<abi>-<versionName>.apk") through the new
+// androidComponents artifact-transform API.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val renameProvider =
+            tasks.register<RenameApksTask>("rename${variant.name.replaceFirstChar { it.uppercase() }}Apks")
+        val request = variant.artifacts.use(renameProvider)
+            .wiredWithDirectories(RenameApksTask::apkFolder, RenameApksTask::outFolder)
+            .toTransformMany(SingleArtifact.APK)
+        renameProvider.configure {
+            transformationRequest.set(request)
+            appName.set("nzbconnect")
+            buildTypeName.set(variant.buildType ?: "")
         }
     }
 }
@@ -117,12 +140,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    kapt(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
+    kapt(libs.androidx.room.compiler)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization)
@@ -137,4 +160,71 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.kotlinx.serialization.json)
+}
+
+interface CopyApkParameters : WorkParameters {
+    val inputApkFile: RegularFileProperty
+    val outputApkFile: RegularFileProperty
+}
+
+abstract class CopyApkWorkAction : WorkAction<CopyApkParameters> {
+    override fun execute() {
+        val output = parameters.outputApkFile.get().asFile
+        output.delete()
+        Files.copy(parameters.inputApkFile.get().asFile.toPath(), output.toPath())
+    }
+}
+
+abstract class RenameApksTask @Inject constructor(
+    private val workerExecutor: WorkerExecutor,
+) : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val apkFolder: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outFolder: DirectoryProperty
+
+    @get:Internal
+    abstract val transformationRequest: Property<ArtifactTransformationRequest<RenameApksTask>>
+
+    @get:Input
+    abstract val appName: Property<String>
+
+    @get:Input
+    abstract val buildTypeName: Property<String>
+
+    @TaskAction
+    fun taskAction() {
+        // Filenames embed the versionName, so a new build creates new files instead of
+        // overwriting old ones; clear stale APKs first so they don't accumulate.
+        outFolder.get().asFile.listFiles()?.forEach { f ->
+            if (f.name.endsWith(".apk")) {
+                f.delete()
+            }
+        }
+
+        transformationRequest.get().submit(
+            this,
+            workerExecutor.noIsolation(),
+            CopyApkWorkAction::class.java,
+        ) { builtArtifact: BuiltArtifact, outputLocation: Directory, params: CopyApkParameters ->
+            val abi = builtArtifact.filters.find {
+                it.filterType == FilterConfiguration.FilterType.ABI
+            }?.identifier
+
+            // Join only the non-null segments so the ABI part drops out cleanly
+            // when ABI splits aren't enabled.
+            val parts = if (buildTypeName.get() == "debug") {
+                listOfNotNull(appName.get(), "debug", abi, builtArtifact.versionName)
+            } else {
+                listOfNotNull(appName.get(), abi, builtArtifact.versionName)
+            }
+            val newName = parts.joinToString("-") + ".apk"
+
+            params.inputApkFile.set(File(builtArtifact.outputFile))
+            params.outputApkFile.set(File(outputLocation.asFile, newName))
+            params.outputApkFile.get().asFile
+        }
+    }
 }
