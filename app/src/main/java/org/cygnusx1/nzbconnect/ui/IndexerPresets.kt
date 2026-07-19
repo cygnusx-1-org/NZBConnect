@@ -45,8 +45,7 @@ object IndexerPresets {
     @DrawableRes
     fun logoFor(baseUrl: String): Int? = presetFor(baseUrl)?.logoRes
 
-    private fun hostOf(url: String): String =
-        url.trim().substringAfter("://").substringBefore('/').removePrefix("www.").lowercase()
+    private fun hostOf(url: String): String = url.trim().substringAfter("://").substringBefore('/').removePrefix("www.").lowercase()
 }
 
 /**

@@ -71,27 +71,20 @@ class DownloadClientRouter @Inject constructor(
 
     override suspend fun fetchQueue(): ApiResult<QueueSnapshot> = active().fetchQueue()
     override suspend fun fetchHistory(limit: Int): ApiResult<List<HistoryItem>> = active().fetchHistory(limit)
-    override suspend fun fetchServerInfo(snapshot: QueueSnapshot?): ApiResult<ServerInfo> =
-        active().fetchServerInfo(snapshot)
+    override suspend fun fetchServerInfo(snapshot: QueueSnapshot?): ApiResult<ServerInfo> = active().fetchServerInfo(snapshot)
     override suspend fun getCategories(): ApiResult<List<String>> = active().getCategories()
-    override suspend fun addUrl(nzbUrl: String, name: String, category: String?): ApiResult<Unit> =
-        active().addUrl(nzbUrl, name, category)
+    override suspend fun addUrl(nzbUrl: String, name: String, category: String?): ApiResult<Unit> = active().addUrl(nzbUrl, name, category)
     override suspend fun pauseAll(): ApiResult<Unit> = active().pauseAll()
     override suspend fun resumeAll(): ApiResult<Unit> = active().resumeAll()
     override suspend fun pauseItem(id: String): ApiResult<Unit> = active().pauseItem(id)
     override suspend fun resumeItem(id: String): ApiResult<Unit> = active().resumeItem(id)
-    override suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
-        active().deleteItem(id, deleteFiles)
+    override suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> = active().deleteItem(id, deleteFiles)
     override suspend fun clearHistory(): ApiResult<Unit> = active().clearHistory()
-    override suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
-        active().deleteHistoryItem(id, deleteFiles)
+    override suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean): ApiResult<Unit> = active().deleteHistoryItem(id, deleteFiles)
     override suspend fun setSpeedLimit(value: Int): ApiResult<Unit> = active().setSpeedLimit(value)
-    override suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> =
-        active().moveItem(id, newPosition)
-    override suspend fun setPriority(id: String, priority: DownloadPriority): ApiResult<Unit> =
-        active().setPriority(id, priority)
-    override suspend fun setPassword(id: String, name: String, password: String): ApiResult<Unit> =
-        active().setPassword(id, name, password)
+    override suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> = active().moveItem(id, newPosition)
+    override suspend fun setPriority(id: String, priority: DownloadPriority): ApiResult<Unit> = active().setPriority(id, priority)
+    override suspend fun setPassword(id: String, name: String, password: String): ApiResult<Unit> = active().setPassword(id, name, password)
     override suspend fun rename(id: String, newName: String): ApiResult<Unit> = active().rename(id, newName)
     override fun webUrl(): String = active().webUrl()
     override suspend fun setFinishAction(action: String): ApiResult<Unit> = active().setFinishAction(action)

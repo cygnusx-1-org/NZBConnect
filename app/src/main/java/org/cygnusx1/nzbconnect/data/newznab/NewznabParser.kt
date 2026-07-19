@@ -48,20 +48,35 @@ object NewznabParser {
 
                     "item" -> {
                         inItem = true
-                        title = ""; guid = ""; link = ""; enclosureUrl = ""
-                        enclosureLen = 0L; attrSize = 0L; category = ""; pubDate = 0L
-                        grabs = 0; year = null; poster = null; imdb = null
+                        title = ""
+                        guid = ""
+                        link = ""
+                        enclosureUrl = ""
+                        enclosureLen = 0L
+                        attrSize = 0L
+                        category = ""
+                        pubDate = 0L
+                        grabs = 0
+                        year = null
+                        poster = null
+                        imdb = null
                     }
 
                     "title" -> if (inItem) title = parser.nextText().trim()
+
                     "guid" -> if (inItem) guid = parser.nextText().trim()
+
                     "link" -> if (inItem) link = parser.nextText().trim()
+
                     "category" -> if (inItem && category.isEmpty()) category = parser.nextText().trim()
+
                     "pubDate" -> if (inItem) pubDate = parseDate(parser.nextText().trim())
+
                     "enclosure" -> if (inItem) {
                         enclosureUrl = parser.getAttributeValue(null, "url").orEmpty()
                         enclosureLen = parser.getAttributeValue(null, "length")?.toLongOrNull() ?: 0L
                     }
+
                     // <newznab:attr name="size" value="123"/> — name may be prefixed
                     "attr", "newznab:attr" -> if (inItem) {
                         val name = parser.getAttributeValue(null, "name")
@@ -149,11 +164,10 @@ object NewznabParser {
         return null
     }
 
-    private fun newParser(xml: String): XmlPullParser =
-        Xml.newPullParser().apply {
-            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            setInput(StringReader(xml))
-        }
+    private fun newParser(xml: String): XmlPullParser = Xml.newPullParser().apply {
+        setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+        setInput(StringReader(xml))
+    }
 
     private fun parseDate(raw: String): Long = try {
         synchronized(rfc1123) { rfc1123.parse(raw)?.time ?: 0L }

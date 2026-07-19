@@ -13,7 +13,11 @@ import org.junit.Test
 
 class NzbgetDtoTest {
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
     @Test
     fun parsesStatusIgnoringUnknownFields() {

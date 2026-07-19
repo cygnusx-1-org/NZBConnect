@@ -11,7 +11,11 @@ import org.junit.Test
 
 class SabnzbdDtoTest {
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
     @Test
     fun parsesQueueWithSlots() {

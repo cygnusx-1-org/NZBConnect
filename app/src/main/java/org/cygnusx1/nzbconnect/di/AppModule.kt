@@ -2,7 +2,6 @@ package org.cygnusx1.nzbconnect.di
 
 import android.content.Context
 import androidx.room.Room
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,6 +20,7 @@ import org.cygnusx1.nzbconnect.data.nzbget.NzbgetApi
 import org.cygnusx1.nzbconnect.data.prefs.SecurePrefs
 import org.cygnusx1.nzbconnect.data.sab.SabnzbdApi
 import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 

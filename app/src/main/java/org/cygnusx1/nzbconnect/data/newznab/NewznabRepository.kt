@@ -35,6 +35,7 @@ class NewznabRepository @Inject constructor(
         }
         return when (val res = rawGet(indexer.baseUrl, params)) {
             is ApiResult.Failure -> res
+
             is ApiResult.Success -> ApiResult.Success(
                 NewznabParser.parseSearch(res.data, indexer.name),
             )
@@ -42,25 +43,25 @@ class NewznabRepository @Inject constructor(
     }
 
     /** Fetch caps, cache the category hierarchy in Room, and return it. */
-    suspend fun refreshCategories(indexer: Indexer): ApiResult<List<NewznabCategory>> =
-        when (val res = rawGet(indexer.baseUrl, mapOf("t" to "caps", "apikey" to indexer.apiKey))) {
-            is ApiResult.Failure -> res
-            is ApiResult.Success -> {
-                val cats = NewznabParser.parseCaps(res.data)
-                categoryDao.clearForIndexer(indexer.id)
-                categoryDao.insertAll(
-                    cats.map {
-                        CategoryEntity(
-                            indexerId = indexer.id,
-                            catId = it.id,
-                            name = it.name,
-                            parentId = it.parentId,
-                        )
-                    },
-                )
-                ApiResult.Success(cats)
-            }
+    suspend fun refreshCategories(indexer: Indexer): ApiResult<List<NewznabCategory>> = when (val res = rawGet(indexer.baseUrl, mapOf("t" to "caps", "apikey" to indexer.apiKey))) {
+        is ApiResult.Failure -> res
+
+        is ApiResult.Success -> {
+            val cats = NewznabParser.parseCaps(res.data)
+            categoryDao.clearForIndexer(indexer.id)
+            categoryDao.insertAll(
+                cats.map {
+                    CategoryEntity(
+                        indexerId = indexer.id,
+                        catId = it.id,
+                        name = it.name,
+                        parentId = it.parentId,
+                    )
+                },
+            )
+            ApiResult.Success(cats)
         }
+    }
 
     /** Categories from the Room cache, refreshing from the indexer if the cache is empty. */
     suspend fun getCategories(indexer: Indexer): ApiResult<List<NewznabCategory>> {
@@ -72,28 +73,26 @@ class NewznabRepository @Inject constructor(
     }
 
     /** Lightweight reachability/auth probe used by the "Test" button. */
-    suspend fun test(indexer: Indexer): ApiResult<Unit> =
-        when (val r = rawGet(indexer.baseUrl, mapOf("t" to "caps", "apikey" to indexer.apiKey))) {
-            is ApiResult.Success -> ApiResult.Success(Unit)
-            is ApiResult.Failure -> r
-        }
+    suspend fun test(indexer: Indexer): ApiResult<Unit> = when (val r = rawGet(indexer.baseUrl, mapOf("t" to "caps", "apikey" to indexer.apiKey))) {
+        is ApiResult.Success -> ApiResult.Success(Unit)
+        is ApiResult.Failure -> r
+    }
 
     private fun apiUrl(baseUrl: String): String {
         val trimmed = baseUrl.trim().trimEnd('/')
         return if (trimmed.endsWith("/api")) trimmed else "$trimmed/api"
     }
 
-    private suspend fun rawGet(baseUrl: String, params: Map<String, String>): ApiResult<String> =
-        try {
-            val response = api.get(apiUrl(baseUrl), params)
-            val body = response.body()?.string().orEmpty()
-            if (!response.isSuccessful) {
-                ApiResult.Failure("HTTP ${response.code()}")
-            } else {
-                val err = NewznabParser.parseError(body)
-                if (err != null) ApiResult.Failure(err) else ApiResult.Success(body)
-            }
-        } catch (e: Exception) {
-            ApiResult.Failure(e.message ?: "Network error")
+    private suspend fun rawGet(baseUrl: String, params: Map<String, String>): ApiResult<String> = try {
+        val response = api.get(apiUrl(baseUrl), params)
+        val body = response.body()?.string().orEmpty()
+        if (!response.isSuccessful) {
+            ApiResult.Failure("HTTP ${response.code()}")
+        } else {
+            val err = NewznabParser.parseError(body)
+            if (err != null) ApiResult.Failure(err) else ApiResult.Success(body)
         }
+    } catch (e: Exception) {
+        ApiResult.Failure(e.message ?: "Network error")
+    }
 }

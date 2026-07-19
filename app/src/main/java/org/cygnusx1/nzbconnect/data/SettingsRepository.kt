@@ -34,11 +34,9 @@ class SettingsRepository @Inject constructor(
         }
 
     /** One-shot snapshot of all indexers (with API keys), used by backup/export. */
-    suspend fun getIndexers(): List<Indexer> =
-        indexerDao.getAll().map { it.toDomain(prefs.indexerApiKey(it.id)) }
+    suspend fun getIndexers(): List<Indexer> = indexerDao.getAll().map { it.toDomain(prefs.indexerApiKey(it.id)) }
 
-    suspend fun getIndexer(id: Long): Indexer? =
-        indexerDao.getById(id)?.let { it.toDomain(prefs.indexerApiKey(it.id)) }
+    suspend fun getIndexer(id: Long): Indexer? = indexerDao.getById(id)?.let { it.toDomain(prefs.indexerApiKey(it.id)) }
 
     suspend fun upsertIndexer(indexer: Indexer): Long {
         val id = if (indexer.id == 0L) {
@@ -88,13 +86,11 @@ class SettingsRepository @Inject constructor(
         prefs.nzbgetDefaultCategory = config.defaultCategory.trim()
     }
 
-    fun getActiveClient(): DownloadClientType =
-        runCatching { DownloadClientType.valueOf(prefs.activeClient) }.getOrDefault(DownloadClientType.SABNZBD)
+    fun getActiveClient(): DownloadClientType = runCatching { DownloadClientType.valueOf(prefs.activeClient) }.getOrDefault(DownloadClientType.SABNZBD)
 
     fun setActiveClient(type: DownloadClientType) {
         prefs.activeClient = type.name
     }
 
-    private fun IndexerEntity.toDomain(apiKey: String) =
-        Indexer(id = id, name = name, baseUrl = baseUrl, enabled = enabled, apiKey = apiKey)
+    private fun IndexerEntity.toDomain(apiKey: String) = Indexer(id = id, name = name, baseUrl = baseUrl, enabled = enabled, apiKey = apiKey)
 }

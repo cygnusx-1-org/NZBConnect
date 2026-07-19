@@ -36,6 +36,7 @@ fun NZBConnectTheme(
         }
 
         darkTheme -> DarkColors
+
         else -> LightColors
     }
     MaterialTheme(

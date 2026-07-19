@@ -33,7 +33,11 @@ enum class DownloadClientType { SABNZBD, NZBGET }
 
 /** Queue-item download priority, mapped to each client's own scale. */
 enum class DownloadPriority(val label: String) {
-    FORCE("Force"), HIGH("High"), NORMAL("Normal"), LOW("Low"), STOP("Stop")
+    FORCE("Force"),
+    HIGH("High"),
+    NORMAL("Normal"),
+    LOW("Low"),
+    STOP("Stop"),
 }
 
 /** User-facing name for a client type. */

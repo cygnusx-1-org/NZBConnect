@@ -53,7 +53,7 @@ data class BackupNzbget(
  */
 @Singleton
 class BackupRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
 ) {
     private val json = Json {

@@ -131,7 +131,13 @@ class NzbgetRepository @Inject constructor(
         if (statusRes is ApiResult.Failure) return statusRes
         val s = decode((statusRes as ApiResult.Success).data, NzbgetStatus.serializer())
 
-        val logRes = rpc("log", buildJsonArray { add(0); add(50) })
+        val logRes = rpc(
+            "log",
+            buildJsonArray {
+                add(0)
+                add(50)
+            },
+        )
         val warnings = if (logRes is ApiResult.Success) {
             decode(logRes.data, ListSerializer(NzbgetLogEntry.serializer()))
                 .filter { it.kind.equals("WARNING", true) || it.kind.equals("ERROR", true) }
@@ -169,19 +175,20 @@ class NzbgetRepository @Inject constructor(
         // so the name MUST end in .nzb or the download is silently skipped (SCAN_SKIPPED).
         val filename = if (name.endsWith(".nzb", ignoreCase = true)) name else "$name.nzb"
         val params = buildJsonArray {
-            add(filename)  // NZBFilename — must end in .nzb (NZBGet fetches the URL itself)
-            add(nzbUrl)    // NZBContent — a URL, which NZBGet downloads itself
-            add(cat)       // Category
-            add(0)         // Priority
-            add(false)     // AddToTop
-            add(false)     // AddPaused
-            add("")        // DupeKey
-            add(0)         // DupeScore
-            add("SCORE")   // DupeMode
+            add(filename) // NZBFilename — must end in .nzb (NZBGet fetches the URL itself)
+            add(nzbUrl) // NZBContent — a URL, which NZBGet downloads itself
+            add(cat) // Category
+            add(0) // Priority
+            add(false) // AddToTop
+            add(false) // AddPaused
+            add("") // DupeKey
+            add(0) // DupeScore
+            add("SCORE") // DupeMode
             addJsonArray {} // PPParameters
         }
         return when (val res = rpc("append", params)) {
             is ApiResult.Failure -> res
+
             is ApiResult.Success -> {
                 val id = (res.data as? JsonPrimitive)?.intOrNull ?: 0
                 if (id > 0) ApiResult.Success(Unit) else ApiResult.Failure("NZBGet rejected the NZB")
@@ -192,14 +199,11 @@ class NzbgetRepository @Inject constructor(
     override suspend fun pauseAll(): ApiResult<Unit> = rpcBool("pausedownload")
     override suspend fun resumeAll(): ApiResult<Unit> = rpcBool("resumedownload")
 
-    override suspend fun pauseItem(id: String): ApiResult<Unit> =
-        editQueue("GroupPause", 0, listOf(id.toInt()))
+    override suspend fun pauseItem(id: String): ApiResult<Unit> = editQueue("GroupPause", 0, listOf(id.toInt()))
 
-    override suspend fun resumeItem(id: String): ApiResult<Unit> =
-        editQueue("GroupResume", 0, listOf(id.toInt()))
+    override suspend fun resumeItem(id: String): ApiResult<Unit> = editQueue("GroupResume", 0, listOf(id.toInt()))
 
-    override suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
-        editQueue(if (deleteFiles) "GroupFinalDelete" else "GroupDelete", 0, listOf(id.toInt()))
+    override suspend fun deleteItem(id: String, deleteFiles: Boolean): ApiResult<Unit> = editQueue(if (deleteFiles) "GroupFinalDelete" else "GroupDelete", 0, listOf(id.toInt()))
 
     override suspend fun clearHistory(): ApiResult<Unit> {
         val res = rpc("history", buildJsonArray { add(false) })
@@ -210,12 +214,10 @@ class NzbgetRepository @Inject constructor(
         return editQueue("HistoryFinalDelete", 0, ids)
     }
 
-    override suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean): ApiResult<Unit> =
-        editQueue(if (deleteFiles) "HistoryFinalDelete" else "HistoryDelete", 0, listOf(id.toInt()))
+    override suspend fun deleteHistoryItem(id: String, deleteFiles: Boolean): ApiResult<Unit> = editQueue(if (deleteFiles) "HistoryFinalDelete" else "HistoryDelete", 0, listOf(id.toInt()))
 
     /** [value] is an absolute KB/s limit (0 = unlimited) for NZBGet. */
-    override suspend fun setSpeedLimit(value: Int): ApiResult<Unit> =
-        rpcBool("rate", buildJsonArray { add(value) })
+    override suspend fun setSpeedLimit(value: Int): ApiResult<Unit> = rpcBool("rate", buildJsonArray { add(value) })
 
     override suspend fun moveItem(id: String, newPosition: Int): ApiResult<Unit> {
         // NZBGet moves are relative, so translate the absolute target into an offset.
@@ -231,28 +233,28 @@ class NzbgetRepository @Inject constructor(
 
     override suspend fun setPriority(id: String, priority: DownloadPriority): ApiResult<Unit> = when (priority) {
         DownloadPriority.FORCE -> editQueueText("GroupSetPriority", "900", listOf(id.toInt()))
+
         DownloadPriority.HIGH -> editQueueText("GroupSetPriority", "100", listOf(id.toInt()))
+
         DownloadPriority.NORMAL -> editQueueText("GroupSetPriority", "0", listOf(id.toInt()))
+
         DownloadPriority.LOW -> editQueueText("GroupSetPriority", "-100", listOf(id.toInt()))
+
         // NZBGet has no "stop" priority; pausing the item is the closest equivalent.
         DownloadPriority.STOP -> editQueue("GroupPause", 0, listOf(id.toInt()))
     }
 
-    override suspend fun setPassword(id: String, name: String, password: String): ApiResult<Unit> =
-        editQueueText("GroupSetParameter", "*Unpack:Password=$password", listOf(id.toInt()))
+    override suspend fun setPassword(id: String, name: String, password: String): ApiResult<Unit> = editQueueText("GroupSetParameter", "*Unpack:Password=$password", listOf(id.toInt()))
 
-    override suspend fun rename(id: String, newName: String): ApiResult<Unit> =
-        editQueueText("GroupSetName", newName, listOf(id.toInt()))
+    override suspend fun rename(id: String, newName: String): ApiResult<Unit> = editQueueText("GroupSetName", newName, listOf(id.toInt()))
 
     override fun webUrl(): String = config().baseUrl.trim().trimEnd('/')
 
     override suspend fun restart(): ApiResult<Unit> = rpcBool("reload")
 
-    override suspend fun setFinishAction(action: String): ApiResult<Unit> =
-        ApiResult.Failure("Not supported by NZBGet")
+    override suspend fun setFinishAction(action: String): ApiResult<Unit> = ApiResult.Failure("Not supported by NZBGet")
 
-    override suspend fun refreshFeeds(): ApiResult<Unit> =
-        ApiResult.Failure("Not supported by NZBGet")
+    override suspend fun refreshFeeds(): ApiResult<Unit> = ApiResult.Failure("Not supported by NZBGet")
 
     /** Connection test for the settings screen (uses entered, not-yet-saved creds). */
     suspend fun testConnection(baseUrl: String, username: String, password: String): ApiResult<String> {
@@ -262,13 +264,20 @@ class NzbgetRepository @Inject constructor(
             val body = resp.body()
             when {
                 resp.code() == 401 -> ApiResult.Failure("Authentication failed (check username/password)")
+
                 !resp.isSuccessful -> ApiResult.Failure("HTTP ${resp.code()}")
+
                 body == null -> ApiResult.Failure("Empty response")
+
                 hasError(body) -> ApiResult.Failure(rpcError(body))
+
                 else -> {
                     val version = (body["result"] as? JsonPrimitive)?.contentOrNull
-                    if (!version.isNullOrBlank()) ApiResult.Success(version)
-                    else ApiResult.Failure("Unexpected response")
+                    if (!version.isNullOrBlank()) {
+                        ApiResult.Success(version)
+                    } else {
+                        ApiResult.Failure("Unexpected response")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -279,28 +288,26 @@ class NzbgetRepository @Inject constructor(
     // --- JSON-RPC plumbing -----------------------------------------------------
 
     /** `editqueue(Command, Offset, EditText, IDs[])` — the verb behind item pause/resume/delete/move. */
-    private suspend fun editQueue(command: String, offset: Int, ids: List<Int>): ApiResult<Unit> =
-        rpcBool(
-            "editqueue",
-            buildJsonArray {
-                add(command)
-                add(offset)
-                add("")
-                addJsonArray { ids.forEach { add(it) } }
-            },
-        )
+    private suspend fun editQueue(command: String, offset: Int, ids: List<Int>): ApiResult<Unit> = rpcBool(
+        "editqueue",
+        buildJsonArray {
+            add(command)
+            add(offset)
+            add("")
+            addJsonArray { ids.forEach { add(it) } }
+        },
+    )
 
     /** `editqueue` variant carrying a value in the EditText field (priority, password, name). */
-    private suspend fun editQueueText(command: String, text: String, ids: List<Int>): ApiResult<Unit> =
-        rpcBool(
-            "editqueue",
-            buildJsonArray {
-                add(command)
-                add(0)
-                add(text)
-                addJsonArray { ids.forEach { add(it) } }
-            },
-        )
+    private suspend fun editQueueText(command: String, text: String, ids: List<Int>): ApiResult<Unit> = rpcBool(
+        "editqueue",
+        buildJsonArray {
+            add(command)
+            add(0)
+            add(text)
+            addJsonArray { ids.forEach { add(it) } }
+        },
+    )
 
     private suspend fun rpc(method: String, params: JsonArray = EMPTY_PARAMS): ApiResult<JsonElement> {
         val cfg = config()
@@ -320,16 +327,18 @@ class NzbgetRepository @Inject constructor(
         }
     }
 
-    private suspend fun rpcBool(method: String, params: JsonArray = EMPTY_PARAMS): ApiResult<Unit> =
-        when (val res = rpc(method, params)) {
-            is ApiResult.Failure -> res
-            is ApiResult.Success ->
-                if ((res.data as? JsonPrimitive)?.booleanOrNull == true) ApiResult.Success(Unit)
-                else ApiResult.Failure("NZBGet rejected the request")
-        }
+    private suspend fun rpcBool(method: String, params: JsonArray = EMPTY_PARAMS): ApiResult<Unit> = when (val res = rpc(method, params)) {
+        is ApiResult.Failure -> res
 
-    private fun <T> decode(element: JsonElement, deserializer: kotlinx.serialization.DeserializationStrategy<T>): T =
-        json.decodeFromJsonElement(deserializer, element)
+        is ApiResult.Success ->
+            if ((res.data as? JsonPrimitive)?.booleanOrNull == true) {
+                ApiResult.Success(Unit)
+            } else {
+                ApiResult.Failure("NZBGet rejected the request")
+            }
+    }
+
+    private fun <T> decode(element: JsonElement, deserializer: kotlinx.serialization.DeserializationStrategy<T>): T = json.decodeFromJsonElement(deserializer, element)
 
     private fun request(method: String, params: JsonArray = EMPTY_PARAMS): JsonObject = buildJsonObject {
         put("method", method)
@@ -338,9 +347,8 @@ class NzbgetRepository @Inject constructor(
 
     private fun hasError(body: JsonObject): Boolean = body["error"].let { it != null && it !is JsonNull }
 
-    private fun rpcError(body: JsonObject): String =
-        (body["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
-            ?: "NZBGet request failed"
+    private fun rpcError(body: JsonObject): String = (body["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
+        ?: "NZBGet request failed"
 
     private fun rpcUrl(baseUrl: String): String {
         val trimmed = baseUrl.trim().trimEnd('/')
@@ -354,8 +362,7 @@ class NzbgetRepository @Inject constructor(
 
     private fun mb(valueMb: Long): Long = valueMb * 1024L * 1024L
 
-    private fun formatRate(bytesPerSec: Long): String =
-        if (bytesPerSec <= 0) "" else "${formatSize(bytesPerSec)}/s"
+    private fun formatRate(bytesPerSec: Long): String = if (bytesPerSec <= 0) "" else "${formatSize(bytesPerSec)}/s"
 
     private fun formatEta(remainingBytes: Long, rate: Long): String {
         if (rate <= 0 || remainingBytes <= 0) return ""

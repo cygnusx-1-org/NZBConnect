@@ -123,8 +123,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    fun hasChildren(category: NewznabCategory): Boolean =
-        _state.value.categories.any { it.parentId == category.id }
+    fun hasChildren(category: NewznabCategory): Boolean = _state.value.categories.any { it.parentId == category.id }
 
     fun drillInto(category: NewznabCategory) {
         _state.update { it.copy(categoryPath = it.categoryPath + category) }
@@ -254,8 +253,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun breadcrumbOf(path: List<NewznabCategory>): String =
-        path.joinToString(" > ") { it.name }
+    private fun breadcrumbOf(path: List<NewznabCategory>): String = path.joinToString(" > ") { it.name }
 
     private inline fun MutableStateFlow<SearchUiState>.update(block: (SearchUiState) -> SearchUiState) {
         value = block(value)

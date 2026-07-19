@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -23,8 +21,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.cygnusx1.nzbconnect.R
 import org.cygnusx1.nzbconnect.domain.Indexer
 import org.cygnusx1.nzbconnect.ui.AppBrandTitle
 import org.cygnusx1.nzbconnect.ui.IndexerLogo
@@ -78,7 +78,7 @@ private fun IndexerCard(indexer: Indexer, onClick: () -> Unit) {
                 IndexerLogo(preset.logoRes, tint = preset.tintLogo, modifier = Modifier.size(40.dp))
             } else {
                 Icon(
-                    Icons.Filled.Dns,
+                    painterResource(R.drawable.ic_dns),
                     contentDescription = null,
                     modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.primary,
@@ -100,5 +100,4 @@ private fun IndexerCard(indexer: Indexer, onClick: () -> Unit) {
     }
 }
 
-private fun hostOf(url: String): String =
-    url.substringAfter("://").substringBefore('/').ifBlank { url }
+private fun hostOf(url: String): String = url.substringAfter("://").substringBefore('/').ifBlank { url }

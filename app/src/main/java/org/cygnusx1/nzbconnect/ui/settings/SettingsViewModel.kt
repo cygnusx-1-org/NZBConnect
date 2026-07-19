@@ -4,13 +4,13 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import org.cygnusx1.nzbconnect.data.BackupRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.cygnusx1.nzbconnect.data.BackupRepository
 import org.cygnusx1.nzbconnect.data.SettingsRepository
 import org.cygnusx1.nzbconnect.data.newznab.NewznabRepository
 import org.cygnusx1.nzbconnect.data.nzbget.NzbgetRepository
@@ -68,11 +68,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Tests the entered (not-yet-saved) indexer values; returns a user-facing result line. */
-    suspend fun testIndexer(indexer: Indexer): String =
-        when (val res = newznabRepository.test(indexer)) {
-            is ApiResult.Success -> "✓ Reachable"
-            is ApiResult.Failure -> "✗ ${res.message}"
-        }
+    suspend fun testIndexer(indexer: Indexer): String = when (val res = newznabRepository.test(indexer)) {
+        is ApiResult.Success -> "✓ Reachable"
+        is ApiResult.Failure -> "✗ ${res.message}"
+    }
 
     fun saveSab(config: SabConfig) {
         settingsRepository.saveSabConfig(config)
@@ -81,11 +80,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Tests the entered (not-yet-saved) SAB values; returns a user-facing result line. */
-    suspend fun testSab(config: SabConfig): String =
-        when (val res = sabnzbdRepository.testConnection(config.baseUrl.trim(), config.apiKey.trim())) {
-            is ApiResult.Success -> "✓ Connected to SABnzbd ${res.data}"
-            is ApiResult.Failure -> "✗ ${res.message}"
-        }
+    suspend fun testSab(config: SabConfig): String = when (val res = sabnzbdRepository.testConnection(config.baseUrl.trim(), config.apiKey.trim())) {
+        is ApiResult.Success -> "✓ Connected to SABnzbd ${res.data}"
+        is ApiResult.Failure -> "✗ ${res.message}"
+    }
 
     fun saveNzbget(config: NzbgetConfig) {
         settingsRepository.saveNzbgetConfig(config)
@@ -94,11 +92,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Tests the entered (not-yet-saved) NZBGet values; returns a user-facing result line. */
-    suspend fun testNzbget(config: NzbgetConfig): String =
-        when (val res = nzbgetRepository.testConnection(config.baseUrl.trim(), config.username.trim(), config.password)) {
-            is ApiResult.Success -> "✓ Connected to NZBGet ${res.data}"
-            is ApiResult.Failure -> "✗ ${res.message}"
-        }
+    suspend fun testNzbget(config: NzbgetConfig): String = when (val res = nzbgetRepository.testConnection(config.baseUrl.trim(), config.username.trim(), config.password)) {
+        is ApiResult.Success -> "✓ Connected to NZBGet ${res.data}"
+        is ApiResult.Failure -> "✗ ${res.message}"
+    }
 
     fun setActiveClient(type: DownloadClientType) {
         settingsRepository.setActiveClient(type)

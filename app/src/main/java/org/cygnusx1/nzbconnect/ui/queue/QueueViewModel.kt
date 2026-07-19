@@ -6,10 +6,10 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.cygnusx1.nzbconnect.data.DownloadClientRouter
 import org.cygnusx1.nzbconnect.domain.ApiResult
@@ -18,19 +18,27 @@ import org.cygnusx1.nzbconnect.domain.DownloadClientType
 import org.cygnusx1.nzbconnect.domain.DownloadPriority
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
-import org.cygnusx1.nzbconnect.domain.ServerInfo
 import org.cygnusx1.nzbconnect.domain.QueueSnapshot
+import org.cygnusx1.nzbconnect.domain.ServerInfo
 import org.cygnusx1.nzbconnect.ui.parseSizeMb
 import javax.inject.Inject
 
 enum class QueueSortOrder(val label: String) {
-    DEFAULT("Default"), NAME("Title"), SIZE("Size"),
-    PAUSED("Paused"), CATEGORY("Category"), PERCENTAGE("Percentage"),
+    DEFAULT("Default"),
+    NAME("Title"),
+    SIZE("Size"),
+    PAUSED("Paused"),
+    CATEGORY("Category"),
+    PERCENTAGE("Percentage"),
 }
 
 enum class HistorySortOrder(val label: String) {
-    DEFAULT("Default"), NAME("Title"), SIZE("Size"),
-    DATE("Date"), CATEGORY("Category"), STATUS("Status"),
+    DEFAULT("Default"),
+    NAME("Title"),
+    SIZE("Size"),
+    DATE("Date"),
+    CATEGORY("Category"),
+    STATUS("Status"),
 }
 
 data class QueueUiState(
@@ -326,25 +334,24 @@ class QueueViewModel @Inject constructor(
 
     fun setItemPriority(id: String, priority: DownloadPriority) = act { current().setPriority(id, priority) }
 
-    fun setItemPassword(id: String, name: String, password: String) =
-        act { current().setPassword(id, name, password) }
+    fun setItemPassword(id: String, name: String, password: String) = act { current().setPassword(id, name, password) }
 
     fun renameItem(id: String, newName: String) = act { current().rename(id, newName) }
 
     fun moveItemToTop(id: String) = act { current().moveItem(id, 0) }
 
-    fun moveItemToEnd(id: String): Unit {
+    fun moveItemToEnd(id: String) {
         val items = _state.value.snapshot?.items ?: return
         if (items.isNotEmpty()) act { current().moveItem(id, items.lastIndex) }
     }
 
-    fun moveItemUp(id: String, by: Int = 10): Unit {
+    fun moveItemUp(id: String, by: Int = 10) {
         val items = _state.value.snapshot?.items ?: return
         val cur = items.indexOfFirst { it.id == id }
         if (cur >= 0) act { current().moveItem(id, (cur - by).coerceAtLeast(0)) }
     }
 
-    fun moveItemDown(id: String, by: Int = 10): Unit {
+    fun moveItemDown(id: String, by: Int = 10) {
         val items = _state.value.snapshot?.items ?: return
         val cur = items.indexOfFirst { it.id == id }
         if (cur >= 0) act { current().moveItem(id, (cur + by).coerceAtMost(items.lastIndex)) }

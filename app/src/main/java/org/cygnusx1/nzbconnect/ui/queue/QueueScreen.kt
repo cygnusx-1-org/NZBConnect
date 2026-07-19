@@ -1,5 +1,6 @@
 package org.cygnusx1.nzbconnect.ui.queue
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -7,8 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -24,40 +26,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.RssFeed
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -75,17 +55,17 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,11 +75,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -111,19 +92,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 import org.cygnusx1.nzbconnect.R
+import org.cygnusx1.nzbconnect.domain.DownloadClientType
+import org.cygnusx1.nzbconnect.domain.DownloadPriority
 import org.cygnusx1.nzbconnect.domain.HistoryItem
 import org.cygnusx1.nzbconnect.domain.QueueItem
 import org.cygnusx1.nzbconnect.domain.QueueSnapshot
-import org.cygnusx1.nzbconnect.domain.DownloadClientType
-import org.cygnusx1.nzbconnect.domain.DownloadPriority
 import org.cygnusx1.nzbconnect.domain.ServerInfo
 import org.cygnusx1.nzbconnect.domain.ServerWarning
 import org.cygnusx1.nzbconnect.domain.displayName
 import org.cygnusx1.nzbconnect.ui.AppBrandTitle
 import org.cygnusx1.nzbconnect.ui.formatHistoryDate
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,6 +136,16 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
         }
     }
 
+    // Clipboard writes are launched from the screen's scope, not a list row's: a row can be
+    // disposed (scrolled away, or dropped by a history refresh) before the suspending write
+    // resumes, which would cancel it and silently copy nothing.
+    val clipboard = LocalClipboard.current
+    val onCopyTitle: (String) -> Unit = { title ->
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", title)))
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
@@ -181,7 +172,7 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                         var menuExpanded by remember { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                                Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
                             }
                             DropdownMenu(
                                 expanded = menuExpanded,
@@ -189,44 +180,69 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                             ) {
                                 state.snapshot?.let {
                                     DropdownMenuItem(
-                                        leadingIcon = { Icon(if (it.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, null) },
+                                        leadingIcon = {
+                                            Icon(
+                                                painterResource(
+                                                    if (it.paused) R.drawable.ic_play_arrow else R.drawable.ic_pause,
+                                                ),
+                                                null,
+                                            )
+                                        },
                                         text = { Text(if (it.paused) "Resume all" else "Pause all") },
-                                        onClick = { viewModel.togglePauseAll(); menuExpanded = false },
+                                        onClick = {
+                                            viewModel.togglePauseAll()
+                                            menuExpanded = false
+                                        },
                                     )
                                 }
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.DeleteSweep, null) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_delete_sweep), null) },
                                     text = { Text("Clear history") },
-                                    onClick = { viewModel.clearHistory(); menuExpanded = false },
+                                    onClick = {
+                                        viewModel.clearHistory()
+                                        menuExpanded = false
+                                    },
                                 )
                                 if (state.capabilities.finishAction) {
                                     DropdownMenuItem(
-                                        leadingIcon = { Icon(Icons.Filled.PowerSettingsNew, null) },
+                                        leadingIcon = { Icon(painterResource(R.drawable.ic_power_settings_new), null) },
                                         text = { Text("Set on finish action") },
-                                        onClick = { showFinishActionDialog = true; menuExpanded = false },
+                                        onClick = {
+                                            showFinishActionDialog = true
+                                            menuExpanded = false
+                                        },
                                     )
                                 }
                                 if (state.capabilities.refreshFeeds) {
                                     DropdownMenuItem(
-                                        leadingIcon = { Icon(Icons.Filled.RssFeed, null) },
+                                        leadingIcon = { Icon(painterResource(R.drawable.ic_rss_feed), null) },
                                         text = { Text("Read all RSS feeds now") },
-                                        onClick = { viewModel.refreshFeeds(); menuExpanded = false },
+                                        onClick = {
+                                            viewModel.refreshFeeds()
+                                            menuExpanded = false
+                                        },
                                     )
                                 }
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.Info, null) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_info), null) },
                                     text = { Text("Show server details") },
-                                    onClick = { showSidebar = true; menuExpanded = false },
+                                    onClick = {
+                                        showSidebar = true
+                                        menuExpanded = false
+                                    },
                                 )
                                 if (state.capabilities.restart) {
                                     DropdownMenuItem(
-                                        leadingIcon = { Icon(Icons.Filled.RestartAlt, null) },
+                                        leadingIcon = { Icon(painterResource(R.drawable.ic_restart_alt), null) },
                                         text = { Text("Restart ${state.clientName}") },
-                                        onClick = { viewModel.restart(); menuExpanded = false },
+                                        onClick = {
+                                            viewModel.restart()
+                                            menuExpanded = false
+                                        },
                                     )
                                 }
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.Language, null) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_language), null) },
                                     text = { Text("View ${state.clientName} on web") },
                                     onClick = {
                                         val url = viewModel.webUrl
@@ -235,9 +251,12 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                                     },
                                 )
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_settings), null) },
                                     text = { Text("${state.clientName} settings") },
-                                    onClick = { onNavigateToSettings(); menuExpanded = false },
+                                    onClick = {
+                                        onNavigateToSettings()
+                                        menuExpanded = false
+                                    },
                                 )
                             }
                         }
@@ -258,7 +277,7 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { padding ->
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-                TabRow(selectedTabIndex = pagerState.currentPage) {
+                SecondaryTabRow(selectedTabIndex = pagerState.currentPage) {
                     Tab(
                         selected = pagerState.currentPage == 0,
                         onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
@@ -279,12 +298,13 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                         ) {
                             QueueTab(state, viewModel)
                         }
+
                         else -> PullToRefreshBox(
                             isRefreshing = state.loadingHistory,
                             onRefresh = viewModel::refreshHistory,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            HistoryTab(state, viewModel)
+                            HistoryTab(state, viewModel, onCopyTitle)
                         }
                     }
                 }
@@ -336,8 +356,14 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                 currentPage = pagerState.currentPage,
                 queueSort = state.queueSort,
                 historySort = state.historySort,
-                onQueueSort = { viewModel.setQueueSort(it); showSortDialog = false },
-                onHistorySort = { viewModel.setHistorySort(it); showSortDialog = false },
+                onQueueSort = {
+                    viewModel.setQueueSort(it)
+                    showSortDialog = false
+                },
+                onHistorySort = {
+                    viewModel.setHistorySort(it)
+                    showSortDialog = false
+                },
                 onDismiss = { showSortDialog = false },
             )
         }
@@ -346,8 +372,15 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
             SpeedLimitDialog(
                 currentLimit = state.snapshot?.speedLimit ?: if (state.capabilities.speedLimitIsPercentage) 100 else 0,
                 isPercentage = state.capabilities.speedLimitIsPercentage,
-                onSelect = { value -> viewModel.setSpeedLimit(value); showSpeedLimitDialog = false },
-                onCustom = { showSpeedLimitDialog = false; customSpeedInput = ""; showCustomSpeedDialog = true },
+                onSelect = { value ->
+                    viewModel.setSpeedLimit(value)
+                    showSpeedLimitDialog = false
+                },
+                onCustom = {
+                    showSpeedLimitDialog = false
+                    customSpeedInput = ""
+                    showCustomSpeedDialog = true
+                },
                 onDismiss = { showSpeedLimitDialog = false },
             )
         }
@@ -373,7 +406,10 @@ fun QueueScreen(onNavigateToSettings: () -> Unit, viewModel: QueueViewModel = hi
                         } else {
                             customSpeedInput.toIntOrNull()?.coerceAtLeast(0)
                         }
-                        if (value != null) { viewModel.setSpeedLimit(value); showCustomSpeedDialog = false }
+                        if (value != null) {
+                            viewModel.setSpeedLimit(value)
+                            showCustomSpeedDialog = false
+                        }
                     }) { Text("Set") }
                 },
                 dismissButton = { TextButton(onClick = { showCustomSpeedDialog = false }) { Text("Cancel") } },
@@ -401,60 +437,89 @@ private fun QueueItemMenu(
     var showPassword by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
 
-    fun close() { expanded = false; submenu = QueueItemSubmenu.NONE }
+    fun close() {
+        expanded = false
+        submenu = QueueItemSubmenu.NONE
+    }
 
     Box {
         IconButton(
-            onClick = { submenu = QueueItemSubmenu.NONE; expanded = true },
+            onClick = {
+                submenu = QueueItemSubmenu.NONE
+                expanded = true
+            },
             modifier = Modifier.size(32.dp),
         ) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+            Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { close() }) {
             when (submenu) {
                 QueueItemSubmenu.NONE -> {
                     DropdownMenuItem(
                         text = { Text("Set priority") },
-                        trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                        trailingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_right), null) },
                         onClick = { submenu = QueueItemSubmenu.PRIORITY },
                     )
                     DropdownMenuItem(
                         text = { Text("Set password") },
-                        onClick = { expanded = false; showPassword = true },
+                        onClick = {
+                            expanded = false
+                            showPassword = true
+                        },
                     )
                     DropdownMenuItem(
                         text = { Text("Move") },
-                        trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                        trailingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_right), null) },
                         onClick = { submenu = QueueItemSubmenu.MOVE },
                     )
                     DropdownMenuItem(
                         text = { Text("Rename") },
-                        onClick = { expanded = false; showRename = true },
+                        onClick = {
+                            expanded = false
+                            showRename = true
+                        },
                     )
                 }
+
                 QueueItemSubmenu.PRIORITY -> {
                     DropdownMenuItem(
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_left), null) },
                         text = { Text("Set Priority", fontWeight = FontWeight.Bold) },
                         onClick = { submenu = QueueItemSubmenu.NONE },
                     )
                     DownloadPriority.values().forEach { priority ->
                         DropdownMenuItem(
                             text = { Text(priority.label) },
-                            onClick = { onSetPriority(priority); close() },
+                            onClick = {
+                                onSetPriority(priority)
+                                close()
+                            },
                         )
                     }
                 }
+
                 QueueItemSubmenu.MOVE -> {
                     DropdownMenuItem(
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_left), null) },
                         text = { Text("Move Options", fontWeight = FontWeight.Bold) },
                         onClick = { submenu = QueueItemSubmenu.NONE },
                     )
-                    DropdownMenuItem(text = { Text("Move to top") }, onClick = { onMoveTop(); close() })
-                    DropdownMenuItem(text = { Text("Move up 10") }, onClick = { onMoveUp(); close() })
-                    DropdownMenuItem(text = { Text("Move down 10") }, onClick = { onMoveDown(); close() })
-                    DropdownMenuItem(text = { Text("Move to end") }, onClick = { onMoveEnd(); close() })
+                    DropdownMenuItem(text = { Text("Move to top") }, onClick = {
+                        onMoveTop()
+                        close()
+                    })
+                    DropdownMenuItem(text = { Text("Move up 10") }, onClick = {
+                        onMoveUp()
+                        close()
+                    })
+                    DropdownMenuItem(text = { Text("Move down 10") }, onClick = {
+                        onMoveDown()
+                        close()
+                    })
+                    DropdownMenuItem(text = { Text("Move to end") }, onClick = {
+                        onMoveEnd()
+                        close()
+                    })
                 }
             }
         }
@@ -466,7 +531,10 @@ private fun QueueItemMenu(
             label = "Password",
             initial = "",
             isPassword = true,
-            onConfirm = { onSetPassword(it); showPassword = false },
+            onConfirm = {
+                onSetPassword(it)
+                showPassword = false
+            },
             onDismiss = { showPassword = false },
         )
     }
@@ -476,7 +544,10 @@ private fun QueueItemMenu(
             label = "New name",
             initial = currentName,
             isPassword = false,
-            onConfirm = { onRename(it); showRename = false },
+            onConfirm = {
+                onRename(it)
+                showRename = false
+            },
             onDismiss = { showRename = false },
         )
     }
@@ -527,7 +598,10 @@ private fun ServiceSelector(
             clients.forEach { type ->
                 DropdownMenuItem(
                     text = { Text(type.displayName) },
-                    onClick = { expanded = false; onSelect(type) },
+                    onClick = {
+                        expanded = false
+                        onSelect(type)
+                    },
                 )
             }
         }
@@ -555,7 +629,7 @@ private fun DownloadsActionBar(
         ) {
             if (state.historyMultiSelect && currentPage == 1) {
                 IconButton(onClick = onToggleMultiSelect) {
-                    Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Cancel selection")
                 }
                 Text(
                     text = "${state.selectedHistoryIds.size} selected",
@@ -567,27 +641,29 @@ private fun DownloadsActionBar(
                     enabled = state.selectedHistoryIds.isNotEmpty(),
                 ) {
                     Icon(
-                        Icons.Filled.Delete,
+                        painterResource(R.drawable.ic_delete),
                         contentDescription = "Delete selected",
-                        tint = if (state.selectedHistoryIds.isNotEmpty())
+                        tint = if (state.selectedHistoryIds.isNotEmpty()) {
                             MaterialTheme.colorScheme.error
-                        else
-                            LocalContentColor.current.copy(alpha = 0.38f),
+                        } else {
+                            LocalContentColor.current.copy(alpha = 0.38f)
+                        },
                     )
                 }
             } else {
                 IconButton(onClick = onSort) {
-                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                    Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sort")
                 }
                 if (currentPage == 1) {
                     IconButton(onClick = onToggleMultiSelect) {
                         Icon(
-                            Icons.Filled.SelectAll,
+                            painterResource(R.drawable.ic_select_all),
                             contentDescription = "Multi-select",
-                            tint = if (state.historyMultiSelect)
+                            tint = if (state.historyMultiSelect) {
                                 MaterialTheme.colorScheme.primary
-                            else
-                                LocalContentColor.current,
+                            } else {
+                                LocalContentColor.current
+                            },
                         )
                     }
                 }
@@ -595,7 +671,7 @@ private fun DownloadsActionBar(
                 val paused = state.snapshot?.paused == true
                 IconButton(onClick = onTogglePauseAll) {
                     Icon(
-                        imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        painter = painterResource(if (paused) R.drawable.ic_play_arrow else R.drawable.ic_pause),
                         contentDescription = if (paused) "Resume all" else "Pause all",
                         tint = if (paused) MaterialTheme.colorScheme.error else LocalContentColor.current,
                     )
@@ -618,7 +694,7 @@ private fun DownloadsActionBar(
                     },
                 ) {
                     IconButton(onClick = onSpeedLimit) {
-                        Icon(Icons.Filled.Speed, contentDescription = "Speed limit")
+                        Icon(painterResource(R.drawable.ic_speed), contentDescription = "Speed limit")
                     }
                 }
             }
@@ -744,9 +820,12 @@ private fun QueueTab(state: QueueUiState, viewModel: QueueViewModel) {
     }
 
     when {
-        state.snapshot == null && state.error != null -> Centered(state.error!!, isError = true)
+        state.snapshot == null && state.error != null -> Centered(state.error, isError = true)
+
         state.snapshot == null -> Centered("Loading…")
+
         localItems.isEmpty() -> Centered("Queue is empty")
+
         else -> LazyColumn(
             state = lazyListState,
             modifier = Modifier.fillMaxSize(),
@@ -843,7 +922,7 @@ private fun QueueRow(
                             modifier = Modifier.size(32.dp),
                         ) {
                             Icon(
-                                imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                painter = painterResource(if (paused) R.drawable.ic_play_arrow else R.drawable.ic_pause),
                                 contentDescription = if (paused) "Resume" else "Pause",
                             )
                         }
@@ -851,7 +930,7 @@ private fun QueueRow(
                             onClick = onDelete,
                             modifier = Modifier.size(32.dp),
                         ) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                            Icon(painterResource(R.drawable.ic_delete), contentDescription = "Delete")
                         }
                         QueueItemMenu(
                             onSetPriority = onSetPriority,
@@ -889,11 +968,17 @@ private fun QueueRow(
 }
 
 @Composable
-private fun HistoryTab(state: QueueUiState, viewModel: QueueViewModel) {
+private fun HistoryTab(
+    state: QueueUiState,
+    viewModel: QueueViewModel,
+    onCopyTitle: (String) -> Unit,
+) {
     val items = state.sortedHistoryItems
     when {
         state.loadingHistory && items.isEmpty() -> Centered("Loading…")
+
         items.isEmpty() -> Centered("No history")
+
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
@@ -907,6 +992,7 @@ private fun HistoryTab(state: QueueUiState, viewModel: QueueViewModel) {
                     onSelect = { viewModel.toggleHistoryItemSelection(item.id) },
                     onDelete = { viewModel.deleteHistoryItem(item.id) },
                     onDeleteWithFiles = { viewModel.deleteHistoryItem(item.id, deleteFiles = true) },
+                    onCopyTitle = { onCopyTitle(item.name) },
                 )
             }
         }
@@ -932,8 +1018,8 @@ private fun HistoryRow(
     onSelect: () -> Unit,
     onDelete: () -> Unit,
     onDeleteWithFiles: () -> Unit,
+    onCopyTitle: () -> Unit,
 ) {
-    val clipboardManager = LocalClipboardManager.current
     var menuExpanded by remember { mutableStateOf(false) }
     var showRemoveSubmenu by remember { mutableStateOf(false) }
 
@@ -948,7 +1034,7 @@ private fun HistoryRow(
         ) {
             if (multiSelect) {
                 Icon(
-                    imageVector = if (selected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                    painter = painterResource(if (selected) R.drawable.ic_check_box else R.drawable.ic_check_box_outline_blank),
                     contentDescription = if (selected) "Selected" else "Not selected",
                     tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 12.dp),
@@ -994,39 +1080,53 @@ private fun HistoryRow(
             }
             if (!multiSelect) {
                 Box {
-                    IconButton(onClick = { showRemoveSubmenu = false; menuExpanded = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                    IconButton(onClick = {
+                        showRemoveSubmenu = false
+                        menuExpanded = true
+                    }) {
+                        Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false; showRemoveSubmenu = false },
+                        onDismissRequest = {
+                            menuExpanded = false
+                            showRemoveSubmenu = false
+                        },
                     ) {
                         if (!showRemoveSubmenu) {
                             DropdownMenuItem(
                                 text = { Text("Copy title") },
                                 onClick = {
-                                    clipboardManager.setText(AnnotatedString(item.name))
+                                    onCopyTitle()
                                     menuExpanded = false
                                 },
                             )
                             DropdownMenuItem(
                                 text = { Text("Remove") },
-                                trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                                trailingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_right), null) },
                                 onClick = { showRemoveSubmenu = true },
                             )
                         } else {
                             DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) },
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_left), null) },
                                 text = { Text("Remove Options", fontWeight = FontWeight.Bold) },
                                 onClick = { showRemoveSubmenu = false },
                             )
                             DropdownMenuItem(
                                 text = { Text("Remove from history") },
-                                onClick = { onDelete(); menuExpanded = false; showRemoveSubmenu = false },
+                                onClick = {
+                                    onDelete()
+                                    menuExpanded = false
+                                    showRemoveSubmenu = false
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text("Remove and delete files") },
-                                onClick = { onDeleteWithFiles(); menuExpanded = false; showRemoveSubmenu = false },
+                                onClick = {
+                                    onDeleteWithFiles()
+                                    menuExpanded = false
+                                    showRemoveSubmenu = false
+                                },
                             )
                         }
                     }
@@ -1090,13 +1190,15 @@ private fun QueueStats(snapshot: QueueSnapshot, onClick: () -> Unit) {
             color = accentColor,
         )
         // Show a dash for zero/blank values (idle) instead of "0:00:00" / "0 B", like NZBGet.
-        fun dashIfEmpty(v: String): String =
-            if (v.isBlank() || v == "0" || v == "0 B" || v == "0:00:00") "---" else v
+        fun dashIfEmpty(v: String): String = if (v.isBlank() || v == "0" || v == "0 B" || v == "0:00:00") "---" else v
         val eta = dashIfEmpty(snapshot.timeLeft)
         val size = dashIfEmpty(snapshot.sizeLeft)
         Text(
-            text = if (isActive && size != "---") "$eta  •  $size left"
-                   else "$eta  •  $size",
+            text = if (isActive && size != "---") {
+                "$eta  •  $size left"
+            } else {
+                "$eta  •  $size"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1150,8 +1252,12 @@ private fun SabInfoSidebar(info: ServerInfo?, loading: Boolean, clientName: Stri
                 }
                 item {
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        listOf("Today" to info.downloadToday, "This Week" to info.downloadWeek,
-                               "This Month" to info.downloadMonth, "Total" to info.downloadTotal)
+                        listOf(
+                            "Today" to info.downloadToday,
+                            "This Week" to info.downloadWeek,
+                            "This Month" to info.downloadMonth,
+                            "Total" to info.downloadTotal,
+                        )
                             .forEach { (label, value) ->
                                 StatCell(label = label, value = value, modifier = Modifier.weight(1f))
                             }

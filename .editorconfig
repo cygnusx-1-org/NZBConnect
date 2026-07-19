@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+# The IntelliJ style matches kotlin.code.style=official (gradle.properties) and the
+# existing formatting; ktlint_official would rewrap most of the codebase.
+ktlint_code_style = intellij_idea
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# Existing code has long descriptive lines (Compose modifier chains, log strings) that
+# ktlint cannot wrap automatically; enforcing a limit would fail the build with no autofix.
+ktlint_standard_max-line-length = disabled
+# @Composable functions are PascalCase by Compose convention, not camelCase.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[*.{xml,yml,yaml}]
+indent_style = space
+indent_size = 4

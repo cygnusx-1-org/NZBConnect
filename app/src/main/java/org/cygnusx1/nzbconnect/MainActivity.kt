@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.TypedValue
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,12 +58,15 @@ class MainActivity : ComponentActivity() {
     private fun logMetrics(label: String, ctx: Context) {
         val c = ctx.resources.configuration
         val m = ctx.resources.displayMetrics
+        // scaledDensity was deprecated in API 34 because font scaling is no longer linear.
+        // applyDimension reports the current px-per-sp, which is what it used to mean.
+        val pxPerSp = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 1f, m)
         Log.i(
             TAG,
             "[$label] fontScale=${c.fontScale} cfgDensityDpi=${c.densityDpi} " +
                 "screenWidthDp=${c.screenWidthDp} smallestWidthDp=${c.smallestScreenWidthDp} | " +
                 "dm.density=${m.density} dm.densityDpi=${m.densityDpi} " +
-                "dm.scaledDensity=${m.scaledDensity} widthPx=${m.widthPixels} heightPx=${m.heightPixels}",
+                "dm.pxPerSp=$pxPerSp widthPx=${m.widthPixels} heightPx=${m.heightPixels}",
         )
     }
 

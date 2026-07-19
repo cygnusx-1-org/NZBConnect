@@ -12,10 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import org.cygnusx1.nzbconnect.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +60,7 @@ fun SearchInputScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
                     }
                 },
                 title = {
@@ -128,11 +126,11 @@ private fun HistoryRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(painterResource(R.drawable.ic_delete_outline), contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         IconButton(onClick = onFill, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Filled.NorthWest, contentDescription = "Use as query", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(painterResource(R.drawable.ic_north_west), contentDescription = "Use as query", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

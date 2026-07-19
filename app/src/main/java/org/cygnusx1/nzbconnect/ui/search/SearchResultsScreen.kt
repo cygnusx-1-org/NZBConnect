@@ -1,5 +1,6 @@
 package org.cygnusx1.nzbconnect.ui.search
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,18 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,10 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import org.cygnusx1.nzbconnect.R
 import org.cygnusx1.nzbconnect.domain.SearchResult
 import org.cygnusx1.nzbconnect.ui.formatAgeShort
 import org.cygnusx1.nzbconnect.ui.formatSize
@@ -105,22 +95,25 @@ fun SearchResultsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
                     }
                 },
                 actions = {
                     Box {
                         IconButton(onClick = { sortMenuOpen = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                            Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sort")
                         }
                         DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                             SortOption.entries.forEach { option ->
                                 DropdownMenuItem(
                                     text = { Text(option.label) },
-                                    onClick = { onSetSort(option); sortMenuOpen = false },
+                                    onClick = {
+                                        onSetSort(option)
+                                        sortMenuOpen = false
+                                    },
                                     trailingIcon = {
                                         if (option == state.sort) {
-                                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null)
+                                            Icon(painterResource(R.drawable.ic_sort), contentDescription = null)
                                         }
                                     },
                                 )
@@ -129,13 +122,13 @@ fun SearchResultsScreen(
                     }
                     IconButton(onClick = { filterOpen = true }) {
                         Icon(
-                            Icons.Filled.FilterList,
+                            painterResource(R.drawable.ic_filter_list),
                             contentDescription = "Filter",
                             tint = if (state.filter.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     IconButton(onClick = onSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                        Icon(painterResource(R.drawable.ic_search), contentDescription = "Search")
                     }
                 },
             )
@@ -144,7 +137,10 @@ fun SearchResultsScreen(
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = isRefreshing,
-            onRefresh = { isRefreshing = true; onReload() },
+            onRefresh = {
+                isRefreshing = true
+                onReload()
+            },
             modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -207,15 +203,21 @@ fun SearchResultsScreen(
         FilterSheet(
             filter = state.filter,
             breadcrumb = ctx?.breadcrumb.orEmpty(),
-            onApply = { onSetFilter(it); filterOpen = false },
-            onClear = { onClearFilter(); filterOpen = false },
+            onApply = {
+                onSetFilter(it)
+                filterOpen = false
+            },
+            onClear = {
+                onClearFilter()
+                filterOpen = false
+            },
             onDismiss = { filterOpen = false },
         )
     }
 }
 
 @Composable
-private fun ResultRow(result: SearchResult, icon: ImageVector, onClick: () -> Unit) {
+private fun ResultRow(result: SearchResult, @DrawableRes icon: Int, onClick: () -> Unit) {
     val badges = badgesOf(result.title)
     Row(
         modifier = Modifier
@@ -235,7 +237,7 @@ private fun ResultRow(result: SearchResult, icon: ImageVector, onClick: () -> Un
             )
         } else {
             Icon(
-                imageVector = icon,
+                painter = painterResource(icon),
                 contentDescription = null,
                 modifier = Modifier.size(60.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -276,18 +278,9 @@ private fun ResultRow(result: SearchResult, icon: ImageVector, onClick: () -> Un
 }
 
 /** Leading icon for result rows, derived from the searched category breadcrumb. */
-private fun categoryIcon(breadcrumb: String?): ImageVector {
-    val name = breadcrumb.orEmpty().substringBefore(" > ").lowercase()
-    return when {
-        "movie" in name -> Icons.Filled.Movie
-        "tv" in name -> Icons.Filled.Tv
-        "audio" in name || "music" in name -> Icons.Filled.Headphones
-        "console" in name || "game" in name -> Icons.Filled.SportsEsports
-        "pc" in name || "app" in name -> Icons.Filled.Apps
-        "book" in name -> Icons.AutoMirrored.Filled.MenuBook
-        else -> Icons.Filled.InsertDriveFile
-    }
-}
+@DrawableRes
+private fun categoryIcon(breadcrumb: String?): Int = categoryIconOrNull(breadcrumb.orEmpty().substringBefore(" > "))
+    ?: R.drawable.ic_insert_drive_file
 
 @Composable
 private fun QualityBadge(text: String, color: Color) {

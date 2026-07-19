@@ -13,12 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,16 +39,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.cygnusx1.nzbconnect.R
 import org.cygnusx1.nzbconnect.domain.Indexer
 import org.cygnusx1.nzbconnect.domain.NzbgetConfig
 import org.cygnusx1.nzbconnect.domain.SabConfig
@@ -111,86 +107,92 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = null; showDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "Add Newznab indexer")
+            FloatingActionButton(onClick = {
+                editing = null
+                showDialog = true
+            }) {
+                Icon(painterResource(R.drawable.ic_add), contentDescription = "Add Newznab indexer")
             }
         },
     ) { padding ->
         Box(
             modifier = Modifier.fillMaxSize(),
         ) {
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Indexers", style = MaterialTheme.typography.titleMedium)
-            if (indexers.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Indexers", style = MaterialTheme.typography.titleMedium)
+                if (indexers.isEmpty()) {
+                    Text(
+                        "No indexers yet. Tap + to add a Newznab indexer.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                indexers.forEach { indexer ->
+                    IndexerRow(
+                        indexer = indexer,
+                        onEdit = {
+                            editing = indexer
+                            showDialog = true
+                        },
+                        onDelete = { viewModel.deleteIndexer(indexer) },
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("SABnzbd server", style = MaterialTheme.typography.titleMedium)
+                SabServerRow(
+                    config = state.sab,
+                    onEdit = { showSabDialog = true },
+                )
+
+                Text("NZBGet server", style = MaterialTheme.typography.titleMedium)
+                NzbgetServerRow(
+                    config = state.nzbget,
+                    onEdit = { showNzbgetDialog = true },
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "No indexers yet. Tap + to add a Newznab indexer.",
+                    "Save or restore your indexer, SABnzbd and NZBGet settings. The backup file " +
+                        "contains your API keys and passwords in plain text — keep it somewhere safe.",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            indexers.forEach { indexer ->
-                IndexerRow(
-                    indexer = indexer,
-                    onEdit = { editing = indexer; showDialog = true },
-                    onDelete = { viewModel.deleteIndexer(indexer) },
-                )
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            Text("SABnzbd server", style = MaterialTheme.typography.titleMedium)
-            SabServerRow(
-                config = state.sab,
-                onEdit = { showSabDialog = true },
-            )
-
-            Text("NZBGet server", style = MaterialTheme.typography.titleMedium)
-            NzbgetServerRow(
-                config = state.nzbget,
-                onEdit = { showNzbgetDialog = true },
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Save or restore your indexer, SABnzbd and NZBGet settings. The backup file " +
-                    "contains your API keys and passwords in plain text — keep it somewhere safe.",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { exportLauncher.launch(backupFileName()) }) {
-                    Text("Back up")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = { exportLauncher.launch(backupFileName()) }) {
+                        Text("Back up")
+                    }
+                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) {
+                        Text("Restore")
+                    }
                 }
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) {
-                    Text("Restore")
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("About", style = MaterialTheme.typography.titleMedium)
+                AboutSection()
+            }
+            androidx.compose.material3.SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) { data ->
+                // Default Snackbar() hardcodes 12.dp padding on all sides; drop the bottom
+                // padding so the bar rests flush on top of the navigation/tab bar.
+                Snackbar(
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp),
+                ) {
+                    Text(data.visuals.message)
                 }
             }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            Text("About", style = MaterialTheme.typography.titleMedium)
-            AboutSection()
-        }
-        androidx.compose.material3.SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) { data ->
-            // Default Snackbar() hardcodes 12.dp padding on all sides; drop the bottom
-            // padding so the bar rests flush on top of the navigation/tab bar.
-            Snackbar(
-                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp),
-            ) {
-                Text(data.visuals.message)
-            }
-        }
         }
     }
 
@@ -288,8 +290,8 @@ private fun IndexerRow(
                     Text("Disabled", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit") }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
+            IconButton(onClick = onEdit) { Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit") }
+            IconButton(onClick = onDelete) { Icon(painterResource(R.drawable.ic_delete), contentDescription = "Delete") }
         }
     }
 }
@@ -323,7 +325,7 @@ private fun SabServerRow(
                     )
                 }
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit") }
+            IconButton(onClick = onEdit) { Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit") }
         }
     }
 }
@@ -404,7 +406,7 @@ private fun NzbgetServerRow(
                     )
                 }
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit") }
+            IconButton(onClick = onEdit) { Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit") }
         }
     }
 }
@@ -498,7 +500,7 @@ private fun SecretField(
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
                 Icon(
-                    imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    painter = painterResource(if (visible) R.drawable.ic_visibility_off else R.drawable.ic_visibility),
                     contentDescription = if (visible) "Hide $label" else "Show $label",
                 )
             }
@@ -573,7 +575,10 @@ private fun IndexerEditDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IndexerPresets.ALL.forEach { preset ->
                             AssistChip(
-                                onClick = { name = preset.name; url = preset.baseUrl },
+                                onClick = {
+                                    name = preset.name
+                                    url = preset.baseUrl
+                                },
                                 label = { Text(preset.name) },
                                 leadingIcon = {
                                     IndexerLogo(preset.logoRes, tint = preset.tintLogo, modifier = Modifier.size(20.dp))
