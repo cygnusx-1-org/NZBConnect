@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 11 and lower backup rules (see data_extraction_rules.xml for Android 12+).
+    Everything is included except the EncryptedSharedPreferences file used by 1.0.2 and
+    earlier, whose Keystore key can't leave the device.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="nzbconnect_secrets.xml" />
+</full-backup-content>

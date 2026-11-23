@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ backup rules. Everything in the app's data directory (Room database,
+    nzbconnect_settings.xml) is included by default for both Google cloud backup and
+    device-to-device transfer. The only exclusion is the EncryptedSharedPreferences file
+    used by 1.0.2 and earlier: its Keystore key can't leave the device, so a restored copy
+    is unreadable.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="nzbconnect_secrets.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="nzbconnect_secrets.xml" />
+    </device-transfer>
+</data-extraction-rules>
